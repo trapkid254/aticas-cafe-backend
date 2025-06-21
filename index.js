@@ -1,450 +1,421 @@
 const express = require('express');
 const cors = require('cors');
-const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
-const { initiateSTKPush, handleCallback } = require('./mpesa');
+const bodyParser = require('body-parser');
 const fs = require('fs');
 const path = require('path');
+const http = require('http');
+const { Server } = require('socket.io');
+const multer = require('multer');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
-const app = express();
-const port = process.env.PORT || 3000; // Use environment variable for port
-
-// CORS configuration
-const corsOptions = {
-    origin: '*', // Allow all origins for development
-    methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
-    credentials: true
-};
+const app =express();
+const port = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors(corsOptions));
-app.use(express.json());
+app.use(cors());
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok' });
-});
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
 
-// M-Pesa routes
-app.post('/api/mpesa/stkpush', async (req, res) => {
+const dataDir = path.join(__dirname, 'data');
+const uploadsDir = path.join(__dirname, 'uploads');
+const usersFilePath = path.join(dataDir, 'users.json');
+const menuItemsFilePath = path.join(dataDir, 'menuItems.json');
+const mealsOfDayFilePath = path.join(dataDir, 'mealsOfDay.json');
+const ordersFilePath = path.join(dataDir, 'orders.json');
+const cartFilePath = path.join(dataDir, 'cart.json');
+const employeesFilePath = path.join(dataDir, 'employees.json');
+
+// Ensure directories and files exist
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+const initializeFile = (filePath, initialContent = '[]') => {
+    if (!fs.existsSync(filePath)) {
+        fs.writeFileSync(filePath, initialContent);
+    }
+};
+
+initializeFile(usersFilePath, '[]');
+initializeFile(menuItemsFilePath, '[]');
+initializeFile(mealsOfDayFilePath, '[]');
+initializeFile(ordersFilePath, '[]');
+initializeFile(cartFilePath, '{}');
+initializeFile(employeesFilePath, '[]');
+
+// Helper functions
+const readData = (filePath) => {
     try {
-        console.log('Received payment request:', req.body);
-        const { phoneNumber, amount, orderId } = req.body;
-        
-        if (!phoneNumber || !amount || !orderId) {
-            return res.status(400).json({
-                success: false,
-                message: 'Missing required fields: phoneNumber, amount, or orderId'
-            });
-        }
-
-        console.log('Initiating M-Pesa payment:', { phoneNumber, amount, orderId });
-        
-        const result = await initiateSTKPush(phoneNumber, amount, orderId);
-        console.log('M-Pesa initiation result:', result);
-        
-        return res.json(result);
+        const data = fs.readFileSync(filePath, 'utf8');
+        return JSON.parse(data);
     } catch (error) {
-        console.error('Error in M-Pesa initiation:', error);
-        return res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to initiate M-Pesa payment'
-        });
+        if (error.code === 'ENOENT') return filePath.includes('cart') ? {} : [];
+        throw error;
+    }
+};
+
+const writeData = (filePath, data) => {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+};
+
+// Multer setup for file uploads
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, 'uploads/')
+    },
+    filename: function (req, file, cb) {
+        cb(null, Date.now() + path.extname(file.originalname))
     }
 });
+const upload = multer({ storage: storage });
 
-app.post('/api/mpesa/callback', async (req, res) => {
-    try {
-        const result = await handleCallback(req, res);
-        return result;
-    } catch (error) {
-        console.error('Error in M-Pesa callback:', error);
-        return res.status(500).json({
-            success: false,
-            message: 'Error processing M-Pesa callback'
-        });
-    }
-});
-
-// Payment status endpoint
-app.get('/api/mpesa/status/:orderId', (req, res) => {
-    try {
-        const { orderId } = req.params;
-        // TODO: Implement actual status check from database
-        return res.json({
-            status: 'pending',
-            message: 'Payment status check not implemented'
-        });
-    } catch (error) {
-        console.error('Error checking payment status:', error);
-        return res.status(500).json({
-            success: false,
-            message: 'Error checking payment status'
-        });
-    }
-});
-
-// Order status update endpoint
-app.post('/api/orders/status', (req, res) => {
-    try {
-        const { orderId, status } = req.body;
-        console.log('Updating order status:', { orderId, status });
-        
-        if (!orderId || !status) {
-            return res.status(400).json({
-                success: false,
-                message: 'Missing required fields: orderId or status'
-            });
-        }
-
-        // TODO: Update order status in database
-        // For now, just return success
-        return res.json({
-            success: true,
-            message: 'Order status updated successfully',
-            data: {
-                orderId,
-                status,
-                updatedAt: new Date().toISOString()
-            }
-        });
-    } catch (error) {
-        console.error('Error updating order status:', error);
-        return res.status(500).json({
-            success: false,
-            message: 'Error updating order status'
-        });
-    }
-});
-
-function getDataFilePath(type) {
-    return path.join(__dirname, 'data', `${type}.json`);
+// JWT Secret
+const JWT_SECRET = process.env.JWT_SECRET || 'your-default-super-secret-key-that-is-long';
+if (JWT_SECRET === 'your-default-super-secret-key-that-is-long') {
+    console.warn('Warning: Using default JWT_SECRET. Please set a secure secret in your environment variables.');
 }
 
-function readData(type) {
-    const file = getDataFilePath(type);
-    if (!fs.existsSync(file)) return [];
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-}
+// Middleware to protect routes
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (token == null) return res.sendStatus(401);
 
-function writeData(type, data) {
-    const file = getDataFilePath(type);
-    fs.writeFileSync(file, JSON.stringify(data, null, 2));
-}
-
-const dataTypes = ['orders', /*'cart',*/ 'menuItems', 'mealsOfDay', 'employees', 'admins', 'payments', 'contacts'];
-
-// IMPORTANT: The generic /api/users endpoint is now adjusted for security.
-// We no longer want a generic POST to /api/users. Registration is handled by /api/register.
-dataTypes.forEach(type => {
-    // GET all
-    app.get(`/api/${type}`, (req, res) => {
-        try {
-            const data = readData(type);
-            // For users, never send back passwords
-            if (type === 'users') {
-                const safeUsers = data.map(({ password, ...user }) => user);
-                return res.json(safeUsers);
-            }
-            res.json(data);
-        } catch (err) {
-            res.status(500).json({ error: err.message });
-        }
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.sendStatus(403);
+        req.user = user;
+        next();
     });
+};
 
-    // POST (add new) - We are disabling this for 'users' type
-    if (type !== 'users') {
-        app.post(`/api/${type}`, (req, res) => {
-            try {
-                const data = readData(type);
-                // For orders, ensure orderId exists
-                if (type === 'orders') {
-                    if (!req.body.orderId && !req.body.id) {
-                        // Generate orderId if missing
-                        req.body.orderId = 'ORD' + Date.now();
-                    }
-                }
-                data.push(req.body);
-                writeData(type, data);
-                res.status(201).json(req.body);
-            } catch (err) {
-                res.status(500).json({ error: err.message });
-            }
-        });
-    }
-
-    // PUT (update all)
-    app.put(`/api/${type}`, (req, res) => {
-        try {
-            writeData(type, req.body);
-            res.json({ success: true });
-        } catch (err) {
-            res.status(500).json({ error: err.message });
-        }
-    });
-});
-
-// Specific endpoints for individual item management by ID
-['menuItems'].forEach(type => {
-    // POST - Add a new item
-    app.post(`/api/${type}`, (req, res) => {
-        try {
-            const data = readData(type);
-            const newItem = {
-                id: `${type.slice(0, -1)}-${Date.now()}`,
-                ...req.body
-            };
-            data.push(newItem);
-            writeData(type, data);
-            res.status(201).json(newItem);
-        } catch (err) {
-            res.status(500).json({ error: err.message });
-        }
-    });
-
-    // GET one by id
-    app.get(`/api/${type}/:id`, (req, res) => {
-        try {
-            const data = readData(type);
-            const item = data.find(i => i.id == req.params.id);
-            if (item) {
-                res.json(item);
-            } else {
-                res.status(404).json({ error: 'Item not found' });
-            }
-        } catch (err) {
-            res.status(500).json({ error: err.message });
-        }
-    });
-
-    // PUT (update one by id)
-    app.put(`/api/${type}/:id`, (req, res) => {
-        try {
-            let data = readData(type);
-            const index = data.findIndex(i => i.id == req.params.id);
-            if (index !== -1) {
-                data[index] = { ...data[index], ...req.body };
-                writeData(type, data);
-                res.json(data[index]);
-            } else {
-                res.status(404).json({ error: 'Item not found' });
-            }
-        } catch (err) {
-            res.status(500).json({ error: err.message });
-        }
-    });
-
-    // DELETE one by id
-    app.delete(`/api/${type}/:id`, (req, res) => {
-        try {
-            let data = readData(type);
-            const newData = data.filter(i => i.id != req.params.id);
-            if (data.length !== newData.length) {
-                writeData(type, newData);
-                res.status(204).send();
-            } else {
-                res.status(404).json({ error: 'Item not found' });
-            }
-        } catch (err) {
-            res.status(500).json({ error: err.message });
-        }
-    });
-});
-
-// Employee Management Endpoints
-app.post('/api/employees', (req, res) => {
-    try {
-        const employees = readData('employees');
-        const newEmployee = {
-            id: `emp-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-            ...req.body
-        };
-        employees.push(newEmployee);
-        writeData('employees', employees);
-        res.status(201).json(newEmployee);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.put('/api/employees/:id', (req, res) => {
-    try {
-        let employees = readData('employees');
-        const index = employees.findIndex(emp => emp.id === req.params.id);
-        if (index !== -1) {
-            employees[index] = { ...employees[index], ...req.body };
-            writeData('employees', employees);
-            res.json(employees[index]);
-        } else {
-            res.status(404).json({ error: 'Employee not found' });
-        }
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.delete('/api/employees/:id', (req, res) => {
-    try {
-        let employees = readData('employees');
-        const newEmployees = employees.filter(emp => emp.id !== req.params.id);
-        if (employees.length !== newEmployees.length) {
-            writeData('employees', newEmployees);
-            res.status(204).send();
-        } else {
-            res.status(404).json({ error: 'Employee not found' });
-        }
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Cart endpoints (user-specific, server-side storage)
-app.get('/api/cart', (req, res) => {
-    const userId = req.query.userId;
-    if (!userId) return res.status(400).json({ error: 'Missing userId' });
-    const allCarts = readData('cart');
-    const userCart = allCarts.find(c => c.userId === userId);
-    res.json(userCart ? userCart.items : []);
-});
-
-// Add or update item in cart
-app.post('/api/cart/item', (req, res) => {
-    const userId = req.body.userId;
-    const item = req.body.item;
-    if (!userId || !item) return res.status(400).json({ error: 'Missing userId or item' });
-    let allCarts = readData('cart');
-    let userCart = allCarts.find(c => c.userId === userId);
-    if (!userCart) {
-        userCart = { userId, items: [] };
-        allCarts.push(userCart);
-    }
-    const existing = userCart.items.find(i => i.id === item.id);
-    if (existing) {
-        existing.quantity += item.quantity;
+// Middleware to check for admin role
+const isAdmin = (req, res, next) => {
+    if (req.user && req.user.role === 'admin') {
+        next();
     } else {
-        userCart.items.push(item);
+        res.status(403).json({ message: 'Forbidden: Requires admin privileges' });
     }
-    writeData('cart', allCarts);
-    res.json({ success: true, cart: userCart.items });
-});
+};
 
-// Update quantity of an item
-app.put('/api/cart/item', (req, res) => {
-    const userId = req.body.userId;
-    const itemId = req.body.itemId;
-    const quantity = req.body.quantity;
-    if (!userId || !itemId || typeof quantity !== 'number') return res.status(400).json({ error: 'Missing userId, itemId, or quantity' });
-    let allCarts = readData('cart');
-    let userCart = allCarts.find(c => c.userId === userId);
-    if (!userCart) return res.status(404).json({ error: 'Cart not found' });
-    const item = userCart.items.find(i => i.id === itemId);
-    if (!item) return res.status(404).json({ error: 'Item not found' });
-    item.quantity = quantity;
-    writeData('cart', allCarts);
-    res.json({ success: true, cart: userCart.items });
-});
+// --- API Endpoints ---
 
-// Remove item from cart
-app.delete('/api/cart/item', (req, res) => {
-    const userId = req.body.userId;
-    const itemId = req.body.itemId;
-    if (!userId || !itemId) return res.status(400).json({ error: 'Missing userId or itemId' });
-    let allCarts = readData('cart');
-    let userCart = allCarts.find(c => c.userId === userId);
-    if (!userCart) return res.status(404).json({ error: 'Cart not found' });
-    userCart.items = userCart.items.filter(i => i.id !== itemId);
-    writeData('cart', allCarts);
-    res.json({ success: true, cart: userCart.items });
-});
-
-// Clear cart
-app.delete('/api/cart', (req, res) => {
-    const userId = req.query.userId;
-    if (!userId) return res.status(400).json({ error: 'Missing userId' });
-    let allCarts = readData('cart');
-    allCarts = allCarts.filter(c => c.userId !== userId);
-    writeData('cart', allCarts);
-    res.json({ success: true });
-});
-
-// === AUTHENTICATION ROUTES ===
-
+// Auth
 app.post('/api/register', async (req, res) => {
-    try {
-        const { name, phone, password } = req.body;
-        if (!name || !phone || !password) {
-            return res.status(400).json({ message: 'Name, phone, and password are required.' });
-        }
-
-        const users = readData('users');
-        if (users.some(u => u.phone === phone)) {
-            return res.status(409).json({ message: 'A user with this phone number already exists.' });
-        }
-
-        const hashedPassword = await bcrypt.hash(password, 10); // Hash the password
-
-        const newUser = {
-            id: 'user_' + Date.now(),
-            name,
-            phone,
-            password: hashedPassword, // Store the hashed password
-            role: 'user', // Default role
-            dateCreated: new Date().toISOString()
-        };
-
-        users.push(newUser);
-        writeData('users', users);
-
-        res.status(201).json({ message: 'User registered successfully.' });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error during registration.', error: error.message });
+    const { email, password, username } = req.body;
+    if (!email || !password || !username) {
+        return res.status(400).json({ message: 'Email, password, and username are required' });
     }
+    const users = readData(usersFilePath);
+    if (users.find(u => u.email === email)) {
+        return res.status(400).json({ message: 'User with this email already exists' });
+    }
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = {
+        id: `user-${Date.now()}`,
+        username,
+        email,
+        password: hashedPassword,
+        role: users.length === 0 ? 'admin' : 'customer' // First user is an admin
+    };
+    users.push(newUser);
+    writeData(usersFilePath, users);
+    res.status(201).json({ message: 'User registered successfully' });
 });
 
 app.post('/api/login', async (req, res) => {
-    try {
-        const { phone, password } = req.body;
-        if (!phone || !password) {
-            return res.status(400).json({ message: 'Phone and password are required.' });
-        }
+    const { email, password } = req.body;
+    const users = readData(usersFilePath);
+    const user = users.find(u => u.email === email);
+    if (!user) {
+        return res.status(400).json({ message: 'Invalid credentials' });
+    }
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+        return res.status(400).json({ message: 'Invalid credentials' });
+    }
+    const accessToken = jwt.sign({ id: user.id, role: user.role, name: user.username }, JWT_SECRET, { expiresIn: '1d' });
+    res.json({ accessToken, user: { id: user.id, name: user.username, role: user.role } });
+});
 
-        const users = readData('users');
-        const user = users.find(u => u.phone === phone);
+app.get('/api/user', authenticateToken, (req, res) => {
+    res.json(req.user);
+});
 
-        if (!user) {
-            return res.status(401).json({ message: 'Invalid credentials.' });
-        }
+// Menu Items
+app.get('/api/menuItems', (req, res) => res.json(readData(menuItemsFilePath)));
+app.post('/api/menuItems', upload.single('image'), (req, res) => {
+    const items = readData(menuItemsFilePath);
+    const newItem = {
+        id: `menu-${Date.now()}`,
+        name: req.body.itemName,
+        price: parseFloat(req.body.itemPrice),
+        category: req.body.itemCategory,
+        available: req.body.itemAvailable === 'on',
+        image: req.file ? `/uploads/${req.file.filename}` : req.body.itemImage || null,
+    };
+    items.push(newItem);
+    writeData(menuItemsFilePath, items);
+    res.status(201).json(newItem);
+});
+app.put('/api/menuItems/:id', upload.single('image'), (req, res) => {
+    const items = readData(menuItemsFilePath);
+    const index = items.findIndex(i => i.id === req.params.id);
+    if (index === -1) return res.status(404).json({ message: "Menu item not found" });
+    const updatedItem = {
+        ...items[index],
+        name: req.body.itemName,
+        price: parseFloat(req.body.itemPrice),
+        category: req.body.itemCategory,
+        available: req.body.itemAvailable === 'on',
+    };
+    if(req.file) {
+        updatedItem.image = `/uploads/${req.file.filename}`;
+    }
+    items[index] = updatedItem;
+    writeData(menuItemsFilePath, items);
+    res.json(updatedItem);
+});
+app.delete('/api/menuItems/:id', (req, res) => {
+    let items = readData(menuItemsFilePath);
+    items = items.filter(i => i.id !== req.params.id);
+    writeData(menuItemsFilePath, items);
+    res.status(204).send();
+});
 
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
-            return res.status(401).json({ message: 'Invalid credentials.' });
-        }
+// Meals of the Day
+app.get('/api/mealsOfDay', (req, res) => res.json(readData(mealsOfDayFilePath)));
+app.post('/api/mealsOfDay', upload.single('image'), (req, res) => {
+    const meals = readData(mealsOfDayFilePath);
+    const newMeal = {
+        id: `meal-${Date.now()}`,
+        name: req.body.mealName,
+        description: req.body.mealDescription,
+        price: parseFloat(req.body.mealPrice),
+        image: req.file ? `/uploads/${req.file.filename}` : req.body.mealImage || null
+    };
+    meals.push(newMeal);
+    writeData(mealsOfDayFilePath, meals);
+    res.status(201).json(newMeal);
+});
+app.delete('/api/mealsOfDay/:id', (req, res) => {
+    let meals = readData(mealsOfDayFilePath);
+    meals = meals.filter(m => m.id !== req.params.id);
+    writeData(mealsOfDayFilePath, meals);
+    res.status(204).send();
+});
 
-        // Passwords match, create JWT
-        const payload = {
-            id: user.id,
-            role: user.role
-        };
+// Orders
+app.get('/api/orders', (req, res) => res.json(readData(ordersFilePath)));
+app.post('/api/orders', (req, res) => {
+    const orders = readData(ordersFilePath);
+    const newOrder = { id: `order-${Date.now()}`, ...req.body, status: 'Pending', date: new Date().toISOString() };
+    orders.unshift(newOrder);
+    writeData(ordersFilePath, orders);
+    io.emit('newOrder', newOrder);
+    res.status(201).json(newOrder);
+});
+app.put('/api/orders/:id', (req, res) => {
+    const orders = readData(ordersFilePath);
+    const index = orders.findIndex(o => o.id === req.params.id);
+    if (index === -1) return res.status(404).json({ message: "Order not found" });
+    orders[index].status = req.body.status;
+    writeData(ordersFilePath, orders);
+    io.emit('orderUpdate', orders[index]);
+    res.json(orders[index]);
+});
 
-        const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1d' });
+// Cart
+app.get('/api/cart/:userId', (req, res) => {
+    const allCarts = readData(cartFilePath);
+    const userCart = allCarts[req.params.userId] || [];
+    res.json(userCart);
+});
+app.post('/api/cart/:userId', (req, res) => {
+    const allCarts = readData(cartFilePath);
+    const { item } = req.body;
+    if (!allCarts[req.params.userId]) {
+        allCarts[req.params.userId] = [];
+    }
+    const cart = allCarts[req.params.userId];
+    const existingItem = cart.find(cartItem => cartItem.id === item.id);
+    if (existingItem) {
+        existingItem.quantity++;
+    } else {
+        cart.push({ ...item, quantity: 1 });
+    }
+    writeData(cartFilePath, allCarts);
+    res.status(200).json(cart);
+});
+app.put('/api/cart/:userId/:itemId', (req, res) => {
+    const allCarts = readData(cartFilePath);
+    const { quantity } = req.body;
+    const cart = allCarts[req.params.userId] || [];
+    const itemIndex = cart.findIndex(item => item.id === req.params.itemId);
+    if (itemIndex > -1) {
+        cart[itemIndex].quantity = quantity;
+        writeData(cartFilePath, allCarts);
+        res.json(cart);
+    } else {
+        res.status(404).json({ message: 'Item not found in cart' });
+    }
+});
+app.delete('/api/cart/:userId/clear', (req, res) => {
+    const allCarts = readData(cartFilePath);
+    allCarts[req.params.userId] = [];
+    writeData(cartFilePath, allCarts);
+    res.status(204).send();
+});
+app.delete('/api/cart/:userId/:itemId', (req, res) => {
+    const allCarts = readData(cartFilePath);
+    let cart = allCarts[req.params.userId] || [];
+    cart = cart.filter(item => item.id !== req.params.itemId);
+    allCarts[req.params.userId] = cart;
+    writeData(cartFilePath, allCarts);
+    res.status(204).send();
+});
 
-        // Send back user info (without password) and token
-        res.json({
-            token,
-            user: {
-                id: user.id,
-                name: user.name,
-                phone: user.phone,
-                role: user.role
-            }
-        });
-
-    } catch (error) {
-        res.status(500).json({ message: 'Server error during login.', error: error.message });
+// Employee Management CRUD
+app.get('/api/employees', (req, res) => {
+    const employees = readData(employeesFilePath);
+    res.json(employees);
+});
+app.get('/api/employees/:id', (req, res) => {
+    const employees = readData(employeesFilePath);
+    const employee = employees.find(e => e.id === req.params.id);
+    if (employee) {
+        res.json(employee);
+    } else {
+        res.status(404).json({ message: 'Employee not found' });
+    }
+});
+app.post('/api/employees', (req, res) => {
+    const employees = readData(employeesFilePath);
+    const { name, role, email, phone } = req.body;
+    const newEmployee = { id: `emp-${Date.now()}`, name, role, email, phone };
+    employees.push(newEmployee);
+    writeData(employeesFilePath, employees);
+    res.status(201).json(newEmployee);
+});
+app.put('/api/employees/:id', (req, res) => {
+    const employees = readData(employeesFilePath);
+    const index = employees.findIndex(e => e.id === req.params.id);
+    if (index !== -1) {
+        employees[index] = { ...employees[index], ...req.body };
+        writeData(employeesFilePath, employees);
+        res.json(employees[index]);
+    } else {
+        res.status(404).json({ message: 'Employee not found' });
+    }
+});
+app.delete('/api/employees/:id', (req, res) => {
+    let employees = readData(employeesFilePath);
+    const initialLength = employees.length;
+    employees = employees.filter(e => e.id !== req.params.id);
+    if (employees.length < initialLength) {
+        writeData(employeesFilePath, employees);
+        res.status(204).send();
+    } else {
+        res.status(404).json({ message: 'Employee not found' });
     }
 });
 
-app.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}`);
-}); 
+// User & Admin Management (Admin only)
+app.get('/api/users', authenticateToken, isAdmin, (req, res) => {
+    const users = readData(usersFilePath).map(({ password, ...user }) => user); // Exclude passwords from list
+    res.json(users);
+});
+
+app.get('/api/users/:id', authenticateToken, isAdmin, (req, res) => {
+    const users = readData(usersFilePath);
+    const user = users.find(u => u.id === req.params.id);
+    if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+    }
+    const { password, ...userToReturn } = user;
+    res.json(userToReturn);
+});
+
+app.post('/api/users', authenticateToken, isAdmin, async (req, res) => {
+    const { username, email, password, role } = req.body;
+    if (!username || !email || !password || !role) {
+        return res.status(400).json({ message: 'Username, email, password, and role are required' });
+    }
+    const users = readData(usersFilePath);
+    if (users.find(u => u.email === email)) {
+        return res.status(400).json({ message: 'Email already in use' });
+    }
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = { id: `user-${Date.now()}`, username, email, password: hashedPassword, role };
+    users.push(newUser);
+    writeData(usersFilePath, users);
+    const { password: _, ...userToReturn } = newUser;
+    res.status(201).json(userToReturn);
+});
+
+app.put('/api/users/:id', authenticateToken, isAdmin, async (req, res) => {
+    const { role, password } = req.body;
+    const users = readData(usersFilePath);
+    const userIndex = users.findIndex(u => u.id === req.params.id);
+    if (userIndex === -1) {
+        return res.status(404).json({ message: 'User not found' });
+    }
+    if (role) {
+        users[userIndex].role = role;
+    }
+    if (password) {
+        users[userIndex].password = await bcrypt.hash(password, 10);
+    }
+    writeData(usersFilePath, users);
+    const { password: _, ...updatedUser } = users[userIndex];
+    res.json(updatedUser);
+});
+
+app.delete('/api/users/:id', authenticateToken, isAdmin, (req, res) => {
+    if (req.user.id === req.params.id) {
+        return res.status(400).json({ message: 'Action forbidden: You cannot delete your own account.' });
+    }
+    let users = readData(usersFilePath);
+    const usersFiltered = users.filter(u => u.id !== req.params.id);
+    if (users.length === usersFiltered.length) {
+        return res.status(404).json({ message: 'User not found' });
+    }
+    writeData(usersFilePath, usersFiltered);
+    res.status(204).send();
+});
+
+// M-Pesa STK Push
+app.post('/stkpush', (req, res) => {
+    // M-Pesa logic here...
+    // This is a placeholder for your actual M-Pesa implementation
+    console.log('STK Push initiated:', req.body);
+    const { orderId } = req.body;
+    
+    // Simulate a successful payment notification after a few seconds
+    setTimeout(() => {
+        console.log('Simulating M-Pesa callback for order:', orderId);
+        io.emit('mpesa-payment-notification', {
+            success: true,
+            message: 'Payment completed successfully.',
+            orderId: orderId,
+            transactionId: `MPESA-${Date.now()}`
+        });
+    }, 5000);
+
+    res.json({ message: 'STK push initiated. Please check your phone.' });
+});
+
+// Socket.io connection
+io.on('connection', (socket) => {
+    console.log('a user connected');
+    socket.on('disconnect', () => {
+        console.log('user disconnected');
+    });
+});
+
+server.listen(port, () => {
+    console.log(`Server listening on port ${port}`);
+});
