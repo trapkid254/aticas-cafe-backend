@@ -1,14 +1,14 @@
 const axios = require('axios');
 const crypto = require('crypto');
 
-// M-Pesa Configuration
+// M-Pesa Configuration - reads from environment variables
 const MPESA_CONFIG = {
-    env: 'sandbox',
-    shortcode: '174379', // Sandbox shortcode
-    consumerKey: '054TZRXJNbDmPjhJBD8fVnJGhqVc3aI8aicf8USfapFfqEBO',
-    consumerSecret: 'e7FmKAQqMmyjT0bGP7tOEpfnvn0chC6fuMsmilF8vJtoi3QPNMnGEjChJybQnCbt',
-    passkey: 'bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919', // Sandbox passkey
-    callbackUrl: 'https://76a9-102-0-8-22.ngrok-free.app/api/mpesa/callback' // ngrok callback URL
+    env: process.env.MPESA_ENV || 'sandbox',
+    shortcode: process.env.MPESA_SHORTCODE,
+    consumerKey: process.env.MPESA_CONSUMER_KEY,
+    consumerSecret: process.env.MPESA_CONSUMER_SECRET,
+    passkey: process.env.MPESA_PASSKEY,
+    callbackUrl: process.env.MPESA_CALLBACK_URL
 };
 
 let accessToken = null;
