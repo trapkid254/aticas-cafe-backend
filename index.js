@@ -34,11 +34,6 @@ const employeesFilePath = path.join(dataDir, 'employees.json');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-// Clear users for a fresh start
-if (fs.existsSync(usersFilePath)) {
-    fs.unlinkSync(usersFilePath);
-}
-
 const initializeFile = (filePath, initialContent = '[]') => {
     if (!fs.existsSync(filePath)) {
         fs.writeFileSync(filePath, initialContent);
