@@ -185,6 +185,120 @@ dataTypes.forEach(type => {
     });
 });
 
+// Specific endpoints for individual item management by ID
+['menuItems'].forEach(type => {
+    // POST - Add a new item
+    app.post(`/api/${type}`, (req, res) => {
+        try {
+            const data = readData(type);
+            const newItem = {
+                id: `${type.slice(0, -1)}-${Date.now()}`,
+                ...req.body
+            };
+            data.push(newItem);
+            writeData(type, data);
+            res.status(201).json(newItem);
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // GET one by id
+    app.get(`/api/${type}/:id`, (req, res) => {
+        try {
+            const data = readData(type);
+            const item = data.find(i => i.id == req.params.id);
+            if (item) {
+                res.json(item);
+            } else {
+                res.status(404).json({ error: 'Item not found' });
+            }
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // PUT (update one by id)
+    app.put(`/api/${type}/:id`, (req, res) => {
+        try {
+            let data = readData(type);
+            const index = data.findIndex(i => i.id == req.params.id);
+            if (index !== -1) {
+                data[index] = { ...data[index], ...req.body };
+                writeData(type, data);
+                res.json(data[index]);
+            } else {
+                res.status(404).json({ error: 'Item not found' });
+            }
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // DELETE one by id
+    app.delete(`/api/${type}/:id`, (req, res) => {
+        try {
+            let data = readData(type);
+            const newData = data.filter(i => i.id != req.params.id);
+            if (data.length !== newData.length) {
+                writeData(type, newData);
+                res.status(204).send();
+            } else {
+                res.status(404).json({ error: 'Item not found' });
+            }
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+});
+
+// Employee Management Endpoints
+app.post('/api/employees', (req, res) => {
+    try {
+        const employees = readData('employees');
+        const newEmployee = {
+            id: `emp-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            ...req.body
+        };
+        employees.push(newEmployee);
+        writeData('employees', employees);
+        res.status(201).json(newEmployee);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/employees/:id', (req, res) => {
+    try {
+        let employees = readData('employees');
+        const index = employees.findIndex(emp => emp.id === req.params.id);
+        if (index !== -1) {
+            employees[index] = { ...employees[index], ...req.body };
+            writeData('employees', employees);
+            res.json(employees[index]);
+        } else {
+            res.status(404).json({ error: 'Employee not found' });
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/employees/:id', (req, res) => {
+    try {
+        let employees = readData('employees');
+        const newEmployees = employees.filter(emp => emp.id !== req.params.id);
+        if (employees.length !== newEmployees.length) {
+            writeData('employees', newEmployees);
+            res.status(204).send();
+        } else {
+            res.status(404).json({ error: 'Employee not found' });
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Cart endpoints (user-specific, server-side storage)
 app.get('/api/cart', (req, res) => {
     const userId = req.query.userId;
