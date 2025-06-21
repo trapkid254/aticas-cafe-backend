@@ -105,19 +105,19 @@ const isAdmin = (req, res, next) => {
 
 // Auth
 app.post('/api/register', async (req, res) => {
-    const { email, password, username } = req.body;
-    if (!email || !password || !username) {
-        return res.status(400).json({ message: 'Email, password, and username are required' });
+    const { name, phone, password } = req.body;
+    if (!name || !phone || !password) {
+        return res.status(400).json({ message: 'Name, phone, and password are required' });
     }
     const users = readData(usersFilePath);
-    if (users.find(u => u.email === email)) {
-        return res.status(400).json({ message: 'User with this email already exists' });
+    if (users.find(u => u.phone === phone)) {
+        return res.status(400).json({ message: 'User with this phone number already exists' });
     }
     const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = {
         id: `user-${Date.now()}`,
-        username,
-        email,
+        username: name,
+        phone,
         password: hashedPassword,
         role: users.length === 0 ? 'admin' : 'customer' // First user is an admin
     };
@@ -127,9 +127,9 @@ app.post('/api/register', async (req, res) => {
 });
 
 app.post('/api/login', async (req, res) => {
-    const { email, password } = req.body;
+    const { phone, password } = req.body;
     const users = readData(usersFilePath);
-    const user = users.find(u => u.email === email);
+    const user = users.find(u => u.phone === phone);
     if (!user) {
         return res.status(400).json({ message: 'Invalid credentials' });
     }
