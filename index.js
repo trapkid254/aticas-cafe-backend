@@ -1,11 +1,13 @@
 const express = require('express');
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const { initiateSTKPush, handleCallback } = require('./mpesa');
 const fs = require('fs');
 const path = require('path');
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000; // Use environment variable for port
 
 // CORS configuration
 const corsOptions = {
@@ -131,37 +133,46 @@ function writeData(type, data) {
     fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
-const dataTypes = ['users', 'orders', /*'cart',*/ 'menuItems', 'mealsOfDay', 'employees', 'admins', 'payments', 'contacts'];
+const dataTypes = ['orders', /*'cart',*/ 'menuItems', 'mealsOfDay', 'employees', 'admins', 'payments', 'contacts'];
 
+// IMPORTANT: The generic /api/users endpoint is now adjusted for security.
+// We no longer want a generic POST to /api/users. Registration is handled by /api/register.
 dataTypes.forEach(type => {
     // GET all
     app.get(`/api/${type}`, (req, res) => {
         try {
             const data = readData(type);
+            // For users, never send back passwords
+            if (type === 'users') {
+                const safeUsers = data.map(({ password, ...user }) => user);
+                return res.json(safeUsers);
+            }
             res.json(data);
         } catch (err) {
             res.status(500).json({ error: err.message });
         }
     });
 
-    // POST (add new)
-    app.post(`/api/${type}`, (req, res) => {
-        try {
-            const data = readData(type);
-            // For orders, ensure orderId exists
-            if (type === 'orders') {
-                if (!req.body.orderId && !req.body.id) {
-                    // Generate orderId if missing
-                    req.body.orderId = 'ORD' + Date.now();
+    // POST (add new) - We are disabling this for 'users' type
+    if (type !== 'users') {
+        app.post(`/api/${type}`, (req, res) => {
+            try {
+                const data = readData(type);
+                // For orders, ensure orderId exists
+                if (type === 'orders') {
+                    if (!req.body.orderId && !req.body.id) {
+                        // Generate orderId if missing
+                        req.body.orderId = 'ORD' + Date.now();
+                    }
                 }
+                data.push(req.body);
+                writeData(type, data);
+                res.status(201).json(req.body);
+            } catch (err) {
+                res.status(500).json({ error: err.message });
             }
-            data.push(req.body);
-            writeData(type, data);
-            res.status(201).json(req.body);
-        } catch (err) {
-            res.status(500).json({ error: err.message });
-        }
-    });
+        });
+    }
 
     // PUT (update all)
     app.put(`/api/${type}`, (req, res) => {
@@ -241,6 +252,83 @@ app.delete('/api/cart', (req, res) => {
     allCarts = allCarts.filter(c => c.userId !== userId);
     writeData('cart', allCarts);
     res.json({ success: true });
+});
+
+// === AUTHENTICATION ROUTES ===
+
+app.post('/api/register', async (req, res) => {
+    try {
+        const { name, phone, password } = req.body;
+        if (!name || !phone || !password) {
+            return res.status(400).json({ message: 'Name, phone, and password are required.' });
+        }
+
+        const users = readData('users');
+        if (users.some(u => u.phone === phone)) {
+            return res.status(409).json({ message: 'A user with this phone number already exists.' });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10); // Hash the password
+
+        const newUser = {
+            id: 'user_' + Date.now(),
+            name,
+            phone,
+            password: hashedPassword, // Store the hashed password
+            role: 'user', // Default role
+            dateCreated: new Date().toISOString()
+        };
+
+        users.push(newUser);
+        writeData('users', users);
+
+        res.status(201).json({ message: 'User registered successfully.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error during registration.', error: error.message });
+    }
+});
+
+app.post('/api/login', async (req, res) => {
+    try {
+        const { phone, password } = req.body;
+        if (!phone || !password) {
+            return res.status(400).json({ message: 'Phone and password are required.' });
+        }
+
+        const users = readData('users');
+        const user = users.find(u => u.phone === phone);
+
+        if (!user) {
+            return res.status(401).json({ message: 'Invalid credentials.' });
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(401).json({ message: 'Invalid credentials.' });
+        }
+
+        // Passwords match, create JWT
+        const payload = {
+            id: user.id,
+            role: user.role
+        };
+
+        const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1d' });
+
+        // Send back user info (without password) and token
+        res.json({
+            token,
+            user: {
+                id: user.id,
+                name: user.name,
+                phone: user.phone,
+                role: user.role
+            }
+        });
+
+    } catch (error) {
+        res.status(500).json({ message: 'Server error during login.', error: error.message });
+    }
 });
 
 app.listen(port, () => {
