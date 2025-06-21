@@ -1,0 +1,8 @@
+# Dependencies
+/node_modules
+
+# Uploads
+/uploads
+
+# Environment variables
+.env 
