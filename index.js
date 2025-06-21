@@ -243,19 +243,6 @@ app.delete('/api/cart', (req, res) => {
     res.json({ success: true });
 });
 
-// Serve static files from the new 'frontend' directory
-app.use(express.static(path.join(__dirname, '..', 'frontend')));
-
-// Only serve index.html for non-API routes
-app.get('*', (req, res) => {
-    if (!req.path.startsWith('/api/')) {
-        res.sendFile(path.join(__dirname, '..', 'index.html'));
-    } else {
-        res.status(404).json({ error: 'API route not found' });
-    }
-});
-
-// Start server
 app.listen(port, () => {
     console.log(`Server running on http://localhost:${port}`);
 }); 
