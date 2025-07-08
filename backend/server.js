@@ -760,6 +760,21 @@ app.delete('/api/cart/:userId/items/:itemType/:menuItemId', async (req, res) => 
   }
 });
 
+// Clear all items from a user's cart
+app.delete('/api/cart/:userId', async (req, res) => {
+  try {
+    let cart = await Cart.findOne({ userId: req.params.userId });
+    if (!cart) {
+      return res.status(404).json({ success: false, error: 'Cart not found' });
+    }
+    cart.items = [];
+    await cart.save();
+    res.json({ success: true, cart });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to clear cart' });
+  }
+});
+
 // Get all orders for a specific user (user-facing)
 app.get('/api/user-orders', authenticateJWT, async (req, res) => {
   try {
