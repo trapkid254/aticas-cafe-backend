@@ -575,6 +575,8 @@ app.post('/api/mpesa/payment', async (req, res) => {
         // 2. Prepare STK push payload
         const timestamp = new Date().toISOString().replace(/[-T:.Z]/g, '').slice(0, 14);
         const password = Buffer.from(shortcode + passkey + timestamp).toString('base64');
+        // Pass order details as JSON string in AccountReference
+        const orderDetails = req.body.orderDetails ? JSON.stringify(req.body.orderDetails) : (orderId || 'AticasCafe');
         const payload = {
             BusinessShortCode: shortcode,
             Password: password,
@@ -584,8 +586,8 @@ app.post('/api/mpesa/payment', async (req, res) => {
             PartyA: phone,
             PartyB: shortcode,
             PhoneNumber: phone,
-            CallBackURL: 'https://my-cafe-sandbox-callback.com/mpesa', // Dummy for sandbox
-            AccountReference: orderId || 'AticasCafe',
+            CallBackURL: 'https://aticas-backend.onrender.com/api/mpesa/callback', // Update to your deployed backend callback
+            AccountReference: orderDetails,
             TransactionDesc: 'Aticas Cafe Order'
         };
         console.log('Sending STK push payload:', payload);
@@ -606,6 +608,63 @@ app.post('/api/mpesa/payment', async (req, res) => {
     } catch (err) {
         console.error('M-Pesa Payment Error:', err);
         res.status(500).json({ error: err.message });
+    }
+});
+
+// M-Pesa Payment Confirmation Callback
+app.post('/api/mpesa/callback', async (req, res) => {
+    try {
+        // Safaricom sends the callback as JSON in req.body
+        const body = req.body;
+        // For sandbox, the structure is in body.Body.stkCallback
+        const callback = body.Body && body.Body.stkCallback;
+        if (!callback) {
+            return res.status(400).json({ success: false, error: 'Invalid callback format' });
+        }
+        const resultCode = callback.ResultCode;
+        const resultDesc = callback.ResultDesc;
+        const metadata = callback.CallbackMetadata;
+        // Only proceed if payment was successful
+        if (resultCode !== 0) {
+            return res.status(200).json({ success: false, message: 'Payment not successful', resultDesc });
+        }
+        // Extract transaction details
+        let mpesaReceipt = null;
+        let phone = null;
+        let amount = null;
+        let orderDetails = null;
+        if (metadata && metadata.Item) {
+            for (const item of metadata.Item) {
+                if (item.Name === 'MpesaReceiptNumber') mpesaReceipt = item.Value;
+                if (item.Name === 'PhoneNumber') phone = item.Value;
+                if (item.Name === 'Amount') amount = item.Value;
+                if (item.Name === 'AccountReference') orderDetails = item.Value;
+            }
+        }
+        // For this implementation, orderDetails should be a JSON stringified order object
+        if (!orderDetails) {
+            return res.status(400).json({ success: false, error: 'Order details missing in callback' });
+        }
+        let orderData;
+        try {
+            orderData = JSON.parse(orderDetails);
+        } catch (e) {
+            // If not JSON, treat as orderId or fallback
+            orderData = { orderId: orderDetails };
+        }
+        // Add payment info
+        orderData.paymentMethod = 'mpesa';
+        orderData.mpesaReceipt = mpesaReceipt;
+        orderData.customerPhone = phone;
+        orderData.total = amount;
+        orderData.status = 'paid';
+        // Save order
+        const newOrder = new Order(orderData);
+        await newOrder.save();
+        res.status(200).json({ success: true, message: 'Order saved after payment', order: newOrder });
+    } catch (err) {
+        console.error('M-Pesa callback error:', err);
+        res.status(500).json({ success: false, error: 'Failed to process payment callback' });
     }
 });
 
