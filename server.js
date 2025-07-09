@@ -59,7 +59,8 @@ const orderSchema = new mongoose.Schema({
       longitude: Number
     }
   },
-  viewedByAdmin: { type: Boolean, default: false }
+  viewedByAdmin: { type: Boolean, default: false },
+  merchantRequestId: { type: String, unique: true } // Added for M-Pesa polling
 });
 const Order = mongoose.model('Order', orderSchema);
 
@@ -479,6 +480,31 @@ app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
+// Cancel order by merchantRequestId or orderId (for payment timeout/cancel)
+app.post('/api/orders/cancel', async (req, res) => {
+  try {
+    const { merchantRequestId, orderId } = req.body;
+    let order = null;
+    if (merchantRequestId) {
+      order = await Order.findOne({ merchantRequestId });
+    } else if (orderId) {
+      order = await Order.findById(orderId);
+    }
+    if (!order) {
+      return res.status(404).json({ success: false, error: 'Order not found' });
+    }
+    if (order.status === 'cancelled') {
+      return res.json({ success: true, order });
+    }
+    order.status = 'cancelled';
+    await order.save();
+    res.json({ success: true, order });
+  } catch (err) {
+    console.error('Order cancel error:', err);
+    res.status(500).json({ success: false, error: 'Failed to cancel order' });
+  }
+});
+
 // Get all menu items
 app.get('/api/menu', async (req, res) => {
   try {
@@ -849,6 +875,19 @@ app.get('/api/user-orders', authenticateJWT, async (req, res) => {
     res.json(orders);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch user orders' });
+  }
+});
+
+// Get order by merchantRequestId (for M-Pesa polling)
+app.get('/api/orders/by-merchant-request/:merchantRequestId', async (req, res) => {
+  try {
+    const order = await Order.findOne({ merchantRequestId: req.params.merchantRequestId });
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    res.json(order);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch order by merchantRequestId' });
   }
 });
 
