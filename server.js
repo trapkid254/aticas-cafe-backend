@@ -60,7 +60,7 @@ const orderSchema = new mongoose.Schema({
     }
   },
   viewedByAdmin: { type: Boolean, default: false },
-  merchantRequestId: { type: String, unique: true } // Added for M-Pesa polling
+  merchantRequestId: { type: String, unique: true, sparse: true } // Added for M-Pesa polling
 });
 const Order = mongoose.model('Order', orderSchema);
 
