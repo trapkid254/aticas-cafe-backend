@@ -13,6 +13,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const cron = require('node-cron');
+const { v4: uuidv4 } = require('uuid');
 console.log('node-fetch loaded for M-Pesa integration');
 
 const PORT = process.env.PORT || 3000;
@@ -386,6 +387,11 @@ app.post('/api/orders', async (req, res) => {
       }
     }
     
+    // Ensure merchantRequestId is unique for every order
+    if (!orderData.merchantRequestId) {
+      orderData.merchantRequestId = uuidv4();
+    }
+    
     const newOrder = new Order(orderData);
     await newOrder.save();
     res.json({ success: true, order: newOrder });
@@ -685,6 +691,10 @@ app.post('/api/mpesa/callback', async (req, res) => {
         orderData.customerPhone = phone;
         orderData.total = amount;
         orderData.status = 'paid';
+        // Ensure merchantRequestId is unique for every order
+        if (!orderData.merchantRequestId) {
+          orderData.merchantRequestId = uuidv4();
+        }
         // Save order
         const newOrder = new Order(orderData);
         await newOrder.save();
