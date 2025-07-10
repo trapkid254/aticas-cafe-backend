@@ -12,6 +12,7 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
+const cron = require('node-cron');
 console.log('node-fetch loaded for M-Pesa integration');
 
 const PORT = process.env.PORT || 3000;
@@ -890,6 +891,19 @@ app.get('/api/orders/by-merchant-request/:merchantRequestId', async (req, res) =
     res.status(500).json({ error: 'Failed to fetch order by merchantRequestId' });
   }
 });
+
+// Helper function to reset all meal quantities
+async function resetAllMealQuantities() {
+  try {
+    await Menu.updateMany({}, { $set: { quantity: 100 } });
+    await MealOfDay.updateMany({}, { $set: { quantity: 100 } });
+    console.log('Meal quantities reset to 100 at 6am');
+  } catch (err) {
+    console.error('Error resetting meal quantities:', err);
+  }
+}
+// Schedule for 6am every day
+cron.schedule('0 6 * * *', resetAllMealQuantities);
 
 // Start server
 app.listen(PORT, () => {
