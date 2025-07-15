@@ -61,6 +61,7 @@ const orderSchema = new mongoose.Schema({
       longitude: Number
     }
   },
+  deliveryFee: { type: Number, default: 0 },
   viewedByAdmin: { type: Boolean, default: false },
   merchantRequestId: { type: String, unique: true, sparse: true } // Added for M-Pesa polling
 });
@@ -357,7 +358,8 @@ app.post('/api/orders', async (req, res) => {
       userId,
       customerName,
       customerPhone,
-      viewedByAdmin: false
+      viewedByAdmin: false,
+      deliveryFee: req.body.deliveryFee || 0
     };
     
     // Validate delivery location if order type is delivery
