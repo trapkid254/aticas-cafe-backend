@@ -118,6 +118,21 @@ const cartSchema = new mongoose.Schema({
 });
 const Cart = mongoose.model('Cart', cartSchema);
 
+// Mongoose Booking model
+const bookingSchema = new mongoose.Schema({
+  type: { type: String, enum: ['catering', 'tour'], required: true },
+  date: { type: Date, required: true },
+  time: { type: String, required: true },
+  numberOfPeople: { type: Number, required: true },
+  customerName: { type: String, required: true },
+  customerPhone: { type: String, required: true },
+  customerEmail: { type: String, required: true },
+  additionalInfo: String,
+  status: { type: String, default: 'pending' },
+  createdAt: { type: Date, default: Date.now }
+});
+const Booking = mongoose.model('Booking', bookingSchema);
+
 // Middleware
 app.use(bodyParser.json());
 
@@ -901,6 +916,26 @@ app.get('/api/orders/by-merchant-request/:merchantRequestId', async (req, res) =
     res.json(order);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch order by merchantRequestId' });
+  }
+});
+
+// Bookings API
+app.post('/api/bookings', async (req, res) => {
+  try {
+    const booking = new Booking(req.body);
+    await booking.save();
+    res.json({ success: true, booking });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to create booking' });
+  }
+});
+
+app.get('/api/bookings', authenticateAdmin, async (req, res) => {
+  try {
+    const bookings = await Booking.find().sort({ createdAt: -1 });
+    res.json({ success: true, bookings });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to fetch bookings' });
   }
 });
 
