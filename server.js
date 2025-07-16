@@ -118,20 +118,8 @@ const cartSchema = new mongoose.Schema({
 });
 const Cart = mongoose.model('Cart', cartSchema);
 
-// Mongoose Booking model
-const bookingSchema = new mongoose.Schema({
-  type: { type: String, enum: ['catering', 'tour'], required: true },
-  date: { type: Date, required: true },
-  time: { type: String, required: true },
-  numberOfPeople: { type: Number, required: true },
-  customerName: { type: String, required: true },
-  customerPhone: { type: String, required: true },
-  customerEmail: { type: String, required: true },
-  additionalInfo: String,
-  status: { type: String, default: 'pending' },
-  createdAt: { type: Date, default: Date.now }
-});
-const Booking = mongoose.model('Booking', bookingSchema);
+// Import the correct Booking model
+const Booking = require('./models/Booking');
 
 // Middleware
 app.use(bodyParser.json());
