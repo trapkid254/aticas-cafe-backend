@@ -922,11 +922,13 @@ app.get('/api/orders/by-merchant-request/:merchantRequestId', async (req, res) =
 // Bookings API
 app.post('/api/bookings', async (req, res) => {
   try {
+    console.log('Received booking:', req.body); // Log the incoming data
     const booking = new Booking(req.body);
     await booking.save();
     res.json({ success: true, booking });
   } catch (err) {
-    res.status(500).json({ success: false, error: 'Failed to create booking' });
+    console.error('Booking creation error:', err); // Log the error
+    res.status(500).json({ success: false, error: 'Failed to create booking', details: err.message });
   }
 });
 
