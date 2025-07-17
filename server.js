@@ -12,8 +12,6 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
-const cron = require('node-cron');
-const { v4: uuidv4 } = require('uuid');
 console.log('node-fetch loaded for M-Pesa integration');
 
 const PORT = process.env.PORT || 3000;
@@ -61,9 +59,7 @@ const orderSchema = new mongoose.Schema({
       longitude: Number
     }
   },
-  deliveryFee: { type: Number, default: 0 },
-  viewedByAdmin: { type: Boolean, default: false },
-  merchantRequestId: { type: String, unique: true, sparse: true } // Added for M-Pesa polling
+  viewedByAdmin: { type: Boolean, default: false }
 });
 const Order = mongoose.model('Order', orderSchema);
 
@@ -117,9 +113,6 @@ const cartSchema = new mongoose.Schema({
   ]
 });
 const Cart = mongoose.model('Cart', cartSchema);
-
-// Import the correct Booking model
-const Booking = require('./models/Booking');
 
 // Middleware
 app.use(bodyParser.json());
@@ -361,8 +354,7 @@ app.post('/api/orders', async (req, res) => {
       userId,
       customerName,
       customerPhone,
-      viewedByAdmin: false,
-      deliveryFee: req.body.deliveryFee || 0
+      viewedByAdmin: false
     };
     
     // Validate delivery location if order type is delivery
@@ -390,11 +382,6 @@ app.post('/api/orders', async (req, res) => {
           error: 'Valid coordinates are required for delivery' 
         });
       }
-    }
-    
-    // Ensure merchantRequestId is unique for every order
-    if (!orderData.merchantRequestId) {
-      orderData.merchantRequestId = uuidv4();
     }
     
     const newOrder = new Order(orderData);
@@ -489,31 +476,6 @@ app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
   } catch (err) {
     console.error('Order update error:', err);
     res.status(500).json({ success: false, error: 'Failed to update order' });
-  }
-});
-
-// Cancel order by merchantRequestId or orderId (for payment timeout/cancel)
-app.post('/api/orders/cancel', async (req, res) => {
-  try {
-    const { merchantRequestId, orderId } = req.body;
-    let order = null;
-    if (merchantRequestId) {
-      order = await Order.findOne({ merchantRequestId });
-    } else if (orderId) {
-      order = await Order.findById(orderId);
-    }
-    if (!order) {
-      return res.status(404).json({ success: false, error: 'Order not found' });
-    }
-    if (order.status === 'cancelled') {
-      return res.json({ success: true, order });
-    }
-    order.status = 'cancelled';
-    await order.save();
-    res.json({ success: true, order });
-  } catch (err) {
-    console.error('Order cancel error:', err);
-    res.status(500).json({ success: false, error: 'Failed to cancel order' });
   }
 });
 
@@ -696,10 +658,6 @@ app.post('/api/mpesa/callback', async (req, res) => {
         orderData.customerPhone = phone;
         orderData.total = amount;
         orderData.status = 'paid';
-        // Ensure merchantRequestId is unique for every order
-        if (!orderData.merchantRequestId) {
-          orderData.merchantRequestId = uuidv4();
-        }
         // Save order
         const newOrder = new Order(orderData);
         await newOrder.save();
@@ -893,54 +851,6 @@ app.get('/api/user-orders', authenticateJWT, async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch user orders' });
   }
 });
-
-// Get order by merchantRequestId (for M-Pesa polling)
-app.get('/api/orders/by-merchant-request/:merchantRequestId', async (req, res) => {
-  try {
-    const order = await Order.findOne({ merchantRequestId: req.params.merchantRequestId });
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-    res.json(order);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch order by merchantRequestId' });
-  }
-});
-
-// Bookings API
-app.post('/api/bookings', async (req, res) => {
-  try {
-    console.log('Received booking:', req.body); // Log the incoming data
-    const booking = new Booking(req.body);
-    await booking.save();
-    res.json({ success: true, booking });
-  } catch (err) {
-    console.error('Booking creation error:', err); // Log the error
-    res.status(500).json({ success: false, error: 'Failed to create booking', details: err.message });
-  }
-});
-
-app.get('/api/bookings', authenticateAdmin, async (req, res) => {
-  try {
-    const bookings = await Booking.find().sort({ createdAt: -1 });
-    res.json({ success: true, bookings });
-  } catch (err) {
-    res.status(500).json({ success: false, error: 'Failed to fetch bookings' });
-  }
-});
-
-// Helper function to reset all meal quantities
-async function resetAllMealQuantities() {
-  try {
-    await Menu.updateMany({}, { $set: { quantity: 100 } });
-    await MealOfDay.updateMany({}, { $set: { quantity: 100 } });
-    console.log('Meal quantities reset to 100 at 6am');
-  } catch (err) {
-    console.error('Error resetting meal quantities:', err);
-  }
-}
-// Schedule for 6am every day
-cron.schedule('0 6 * * *', resetAllMealQuantities);
 
 // Start server
 app.listen(PORT, () => {
