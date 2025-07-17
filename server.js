@@ -883,9 +883,9 @@ app.post('/api/bookings', async (req, res) => {
 app.get('/api/bookings', async (req, res) => {
   try {
     const bookings = await Booking.find().sort({ createdAt: -1 });
-    res.json(bookings);
+    res.json({ success: true, bookings });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch bookings' });
+    res.status(500).json({ success: false, error: 'Failed to fetch bookings' });
   }
 });
 
