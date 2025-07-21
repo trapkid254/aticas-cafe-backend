@@ -43,6 +43,7 @@ const orderSchema = new mongoose.Schema({
     }
   ],
   total: Number,
+  deliveryFee: { type: Number, default: 0 },
   status: { type: String, default: 'pending' },
   customerName: String,
   customerPhone: String,
