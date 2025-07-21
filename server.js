@@ -1,8 +1,11 @@
 const express = require('express');
 const cors = require('cors');
 const app = express();
-// For development, allow all origins (CORS) - MUST be first
-app.use(cors());
+// For production, allow only Netlify frontend
+app.use(cors({
+  origin: 'https://cafeaticas.netlify.app',
+  credentials: true // if you use cookies/auth
+}));
 
 require('dotenv').config();
 const bodyParser = require('body-parser');
