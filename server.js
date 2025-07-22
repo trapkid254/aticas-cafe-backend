@@ -32,7 +32,11 @@ const menuSchema = new mongoose.Schema({
   price: Number,
   category: String,
   image: String,
-  quantity: { type: Number, default: 10 }
+  quantity: { type: Number, default: 10 },
+  priceOptions: [{
+    size: String,
+    price: Number
+  }]
 });
 const Menu = mongoose.model('Menu', menuSchema);
 
@@ -42,7 +46,11 @@ const orderSchema = new mongoose.Schema({
     {
       itemType: { type: String, enum: ['Menu', 'MealOfDay'], required: true },
       menuItem: { type: mongoose.Schema.Types.ObjectId, required: true, refPath: 'items.itemType' },
-      quantity: Number
+      quantity: Number,
+      selectedSize: {
+        size: String,
+        price: Number
+      }
     }
   ],
   total: Number,
@@ -112,7 +120,11 @@ const cartSchema = new mongoose.Schema({
     {
       itemType: { type: String, enum: ['Menu', 'MealOfDay'], required: true },
       menuItem: { type: mongoose.Schema.Types.ObjectId, required: true, refPath: 'items.itemType' },
-      quantity: { type: Number, default: 1 }
+      quantity: { type: Number, default: 1 },
+      selectedSize: {
+        size: String,
+        price: Number
+      }
     }
   ]
 });
