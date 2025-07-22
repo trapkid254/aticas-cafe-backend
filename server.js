@@ -549,7 +549,12 @@ app.post('/api/menu', authenticateAdmin, async (req, res) => {
 // Update menu item (protected)
 app.put('/api/menu/:id', authenticateAdmin, async (req, res) => {
   try {
-    const updatedItem = await Menu.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    // Only update image if provided and not empty
+    const updateData = { ...req.body };
+    if (Object.prototype.hasOwnProperty.call(updateData, 'image') && (!updateData.image || updateData.image === '')) {
+      delete updateData.image;
+    }
+    const updatedItem = await Menu.findByIdAndUpdate(req.params.id, updateData, { new: true });
     if (updatedItem) {
       res.json({ success: true, item: updatedItem });
     } else {
