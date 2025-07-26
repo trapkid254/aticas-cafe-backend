@@ -130,20 +130,7 @@ const cartSchema = new mongoose.Schema({
 });
 const Cart = mongoose.model('Cart', cartSchema);
 
-// Remove this block:
-// const bookingSchema = new mongoose.Schema({
-//   customerName: { type: String, required: true },
-//   customerPhone: { type: String, required: true },
-//   date: { type: Date, required: true },
-//   time: { type: String, required: true },
-//   numberOfPeople: { type: Number, required: true },
-//   specialRequests: { type: String },
-//   status: { type: String, default: 'pending' },
-//   createdAt: { type: Date, default: Date.now }
-// });
-// const Booking = mongoose.model('Booking', bookingSchema);
-
-// Instead, import the Booking model:
+// Import the Booking model
 const Booking = require('./models/Booking');
 
 // Middleware
@@ -320,11 +307,10 @@ app.get('/api/orders', authenticateAdmin, async (req, res) => {
 app.get('/api/orders/:id', async (req, res) => {
   try {
     const order = await Order.findById(req.params.id).populate('items.menuItem');
-    console.log('Fetched order:', JSON.stringify(order, null, 2)); // Debug log
+    console.log('Fetched order:', JSON.stringify(order, null, 2));
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    // Optional: Add check to ensure the user requesting the order is the one who owns it
     res.json(order);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch order' });
@@ -337,6 +323,7 @@ app.post('/api/orders', async (req, res) => {
     let userId = null;
     let customerName = req.body.customerName;
     let customerPhone = req.body.customerPhone;
+    
     // Try to get userId from JWT if present
     const token = req.headers['authorization'];
     if (token) {
@@ -344,7 +331,6 @@ app.post('/api/orders', async (req, res) => {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         userId = decoded.userId;
         if (userId) {
-          // Fetch user details from DB
           const user = await User.findById(userId);
           if (user) {
             customerName = user.name;
@@ -353,6 +339,7 @@ app.post('/api/orders', async (req, res) => {
         }
       } catch (err) {}
     }
+    
     // Validate each item and check quantities
     for (const item of req.body.items) {
       if (!item.itemType || !['Menu', 'MealOfDay'].includes(item.itemType)) {
@@ -370,6 +357,22 @@ app.post('/api/orders', async (req, res) => {
         return res.status(400).json({ success: false, error: `Invalid menuItem for itemType ${item.itemType}.` });
       }
       
+      // Validate selectedSize if provided
+      if (item.selectedSize) {
+        if (item.itemType === 'Menu' && found.priceOptions) {
+          const validSize = found.priceOptions.some(
+            option => option.size === item.selectedSize.size && 
+                     option.price === item.selectedSize.price
+          );
+          if (!validSize) {
+            return res.status(400).json({ 
+              success: false, 
+              error: `Invalid size selection for ${found.name}` 
+            });
+          }
+        }
+      }
+      
       // Check if sufficient quantity is available
       const requestedQuantity = item.quantity || 1;
       if (found.quantity < requestedQuantity) {
@@ -380,9 +383,37 @@ app.post('/api/orders', async (req, res) => {
       }
     }
     
+    // Calculate total price including selected sizes
+    const itemsWithPrices = await Promise.all(req.body.items.map(async item => {
+      let price;
+      if (item.selectedSize) {
+        price = item.selectedSize.price;
+      } else {
+        const menuItem = item.itemType === 'Menu' 
+          ? await Menu.findById(item.menuItem)
+          : await MealOfDay.findById(item.menuItem);
+        price = menuItem.price;
+      }
+      return {
+        ...item,
+        price: price * item.quantity
+      };
+    }));
+    
+    const subtotal = itemsWithPrices.reduce((sum, item) => sum + item.price, 0);
+    const deliveryFee = req.body.deliveryFee || 0;
+    const total = subtotal + deliveryFee;
+    
     // Prepare order data
     const orderData = {
       ...req.body,
+      items: req.body.items.map(item => ({
+        ...item,
+        // Ensure selectedSize is properly included
+        selectedSize: item.selectedSize || undefined
+      })),
+      total,
+      deliveryFee,
       userId,
       customerName,
       customerPhone,
@@ -418,6 +449,15 @@ app.post('/api/orders', async (req, res) => {
     
     const newOrder = new Order(orderData);
     await newOrder.save();
+    
+    // Clear the user's cart if logged in
+    if (userId) {
+      await Cart.findOneAndUpdate(
+        { userId },
+        { $set: { items: [] } }
+      );
+    }
+    
     res.json({ success: true, order: newOrder });
   } catch (err) {
     console.error('Order creation error:', err);
@@ -441,7 +481,6 @@ app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
         const quantityToReduce = item.quantity || 1;
         
         if (item.itemType === 'Menu') {
-          // Check current quantity before reducing
           const menuItem = await Menu.findById(item.menuItem);
           if (menuItem.quantity < quantityToReduce) {
             return res.status(400).json({ 
@@ -449,14 +488,12 @@ app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
               error: `Cannot complete order: Insufficient quantity for ${menuItem.name}. Available: ${menuItem.quantity}, Required: ${quantityToReduce}` 
             });
           }
-          // Reduce quantity for menu items
           await Menu.findByIdAndUpdate(
             item.menuItem,
             { $inc: { quantity: -quantityToReduce } },
             { new: true }
           );
         } else if (item.itemType === 'MealOfDay') {
-          // Check current quantity before reducing
           const mealItem = await MealOfDay.findById(item.menuItem);
           if (mealItem.quantity < quantityToReduce) {
             return res.status(400).json({ 
@@ -464,7 +501,6 @@ app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
               error: `Cannot complete order: Insufficient quantity for ${mealItem.name}. Available: ${mealItem.quantity}, Required: ${quantityToReduce}` 
             });
           }
-          // Reduce quantity for meals of the day
           await MealOfDay.findByIdAndUpdate(
             item.menuItem,
             { $inc: { quantity: -quantityToReduce } },
@@ -480,14 +516,12 @@ app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
         const quantityToRestore = item.quantity || 1;
         
         if (item.itemType === 'Menu') {
-          // Restore quantity for menu items
           await Menu.findByIdAndUpdate(
             item.menuItem,
             { $inc: { quantity: quantityToRestore } },
             { new: true }
           );
         } else if (item.itemType === 'MealOfDay') {
-          // Restore quantity for meals of the day
           await MealOfDay.findByIdAndUpdate(
             item.menuItem,
             { $inc: { quantity: quantityToRestore } },
@@ -497,10 +531,9 @@ app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
       }
     }
 
-    // Update the order status
     const updatedOrder = await Order.findByIdAndUpdate(
       req.params.id, 
-      req.body, 
+      { status },
       { new: true }
     );
     
@@ -538,6 +571,24 @@ app.get('/api/menu/:id', async (req, res) => {
 // Add new menu item (protected)
 app.post('/api/menu', authenticateAdmin, async (req, res) => {
   try {
+    // Validate priceOptions if provided
+    if (req.body.priceOptions) {
+      for (const option of req.body.priceOptions) {
+        if (!option.size || !option.price) {
+          return res.status(400).json({
+            success: false,
+            error: 'Each price option must have both size and price'
+          });
+        }
+        if (typeof option.price !== 'number' || option.price <= 0) {
+          return res.status(400).json({
+            success: false,
+            error: 'Price must be a positive number'
+          });
+        }
+      }
+    }
+    
     const newItem = new Menu(req.body);
     await newItem.save();
     res.json({ success: true, item: newItem });
@@ -549,11 +600,29 @@ app.post('/api/menu', authenticateAdmin, async (req, res) => {
 // Update menu item (protected)
 app.put('/api/menu/:id', authenticateAdmin, async (req, res) => {
   try {
-    // Only update image if provided and not empty
+    // Validate priceOptions if provided
+    if (req.body.priceOptions) {
+      for (const option of req.body.priceOptions) {
+        if (!option.size || !option.price) {
+          return res.status(400).json({
+            success: false,
+            error: 'Each price option must have both size and price'
+          });
+        }
+        if (typeof option.price !== 'number' || option.price <= 0) {
+          return res.status(400).json({
+            success: false,
+            error: 'Price must be a positive number'
+          });
+        }
+      }
+    }
+    
     const updateData = { ...req.body };
     if (Object.prototype.hasOwnProperty.call(updateData, 'image') && (!updateData.image || updateData.image === '')) {
       delete updateData.image;
     }
+    
     const updatedItem = await Menu.findByIdAndUpdate(req.params.id, updateData, { new: true });
     if (updatedItem) {
       res.json({ success: true, item: updatedItem });
@@ -594,25 +663,20 @@ app.post('/api/mpesa/payment', async (req, res) => {
     } else if (phone.startsWith('0')) {
         phone = '254' + phone.slice(1);
     }
-    // If phone already starts with 254 and is 12 digits, use as is
     try {
         console.log('Received M-Pesa payment request:', { phone, amount, orderId });
         // 1. Get access token
         const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
-        console.log('Requesting access token...');
         const tokenRes = await fetch('https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials', {
             headers: { Authorization: `Basic ${auth}` }
         });
-        console.log('Token response status:', tokenRes.status);
         const tokenData = await tokenRes.json();
-        console.log('Token data:', tokenData);
         const accessToken = tokenData.access_token;
         if (!accessToken) throw new Error('Failed to get M-Pesa access token');
 
         // 2. Prepare STK push payload
         const timestamp = new Date().toISOString().replace(/[-T:.Z]/g, '').slice(0, 14);
         const password = Buffer.from(shortcode + passkey + timestamp).toString('base64');
-        // Pass order details as JSON string in AccountReference
         const orderDetails = req.body.orderDetails ? JSON.stringify(req.body.orderDetails) : (orderId || 'AticasCafe');
         const payload = {
             BusinessShortCode: shortcode,
@@ -623,11 +687,10 @@ app.post('/api/mpesa/payment', async (req, res) => {
             PartyA: phone,
             PartyB: shortcode,
             PhoneNumber: phone,
-            CallBackURL: 'https://aticas-backend.onrender.com/api/mpesa/callback', // Update to your deployed backend callback
+            CallBackURL: 'https://aticas-backend.onrender.com/api/mpesa/callback',
             AccountReference: orderDetails,
             TransactionDesc: 'Aticas Cafe Order'
         };
-        console.log('Sending STK push payload:', payload);
 
         // 3. Send STK push
         const stkRes = await fetch('https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest', {
@@ -638,9 +701,7 @@ app.post('/api/mpesa/payment', async (req, res) => {
             },
             body: JSON.stringify(payload)
         });
-        console.log('STK push response status:', stkRes.status);
         const stkData = await stkRes.json();
-        console.log('STK push response data:', stkData);
         res.json(stkData);
     } catch (err) {
         console.error('M-Pesa Payment Error:', err);
@@ -651,9 +712,7 @@ app.post('/api/mpesa/payment', async (req, res) => {
 // M-Pesa Payment Confirmation Callback
 app.post('/api/mpesa/callback', async (req, res) => {
     try {
-        // Safaricom sends the callback as JSON in req.body
         const body = req.body;
-        // For sandbox, the structure is in body.Body.stkCallback
         const callback = body.Body && body.Body.stkCallback;
         if (!callback) {
             return res.status(400).json({ success: false, error: 'Invalid callback format' });
@@ -661,15 +720,16 @@ app.post('/api/mpesa/callback', async (req, res) => {
         const resultCode = callback.ResultCode;
         const resultDesc = callback.ResultDesc;
         const metadata = callback.CallbackMetadata;
-        // Only proceed if payment was successful
+        
         if (resultCode !== 0) {
             return res.status(200).json({ success: false, message: 'Payment not successful', resultDesc });
         }
-        // Extract transaction details
+        
         let mpesaReceipt = null;
         let phone = null;
         let amount = null;
         let orderDetails = null;
+        
         if (metadata && metadata.Item) {
             for (const item of metadata.Item) {
                 if (item.Name === 'MpesaReceiptNumber') mpesaReceipt = item.Value;
@@ -678,26 +738,35 @@ app.post('/api/mpesa/callback', async (req, res) => {
                 if (item.Name === 'AccountReference') orderDetails = item.Value;
             }
         }
-        // For this implementation, orderDetails should be a JSON stringified order object
+        
         if (!orderDetails) {
             return res.status(400).json({ success: false, error: 'Order details missing in callback' });
         }
+        
         let orderData;
         try {
             orderData = JSON.parse(orderDetails);
         } catch (e) {
-            // If not JSON, treat as orderId or fallback
             orderData = { orderId: orderDetails };
         }
-        // Add payment info
+        
         orderData.paymentMethod = 'mpesa';
         orderData.mpesaReceipt = mpesaReceipt;
         orderData.customerPhone = phone;
         orderData.total = amount;
         orderData.status = 'paid';
-        // Save order
+        
         const newOrder = new Order(orderData);
         await newOrder.save();
+        
+        // Clear the user's cart if they were logged in
+        if (orderData.userId) {
+          await Cart.findOneAndUpdate(
+            { userId: orderData.userId },
+            { $set: { items: [] } }
+          );
+        }
+        
         res.status(200).json({ success: true, message: 'Order saved after payment', order: newOrder });
     } catch (err) {
         console.error('M-Pesa callback error:', err);
@@ -808,12 +877,29 @@ app.post('/api/users/login',
 // Get cart for user
 app.get('/api/cart/:userId', async (req, res) => {
   try {
-    const cart = await Cart.findOne({ userId: req.params.userId }).populate('items.menuItem');
-    if (cart) {
-      console.log('Cart items:', cart.items.map(i => ({ itemType: i.itemType, menuItem: i.menuItem })));
+    const cart = await Cart.findOne({ userId: req.params.userId })
+      .populate({
+        path: 'items.menuItem',
+        model: 'Menu',
+        select: 'name price image priceOptions'
+      });
+      
+    if (!cart) {
+      return res.json({ userId: req.params.userId, items: [] });
     }
-    res.json(cart || { userId: req.params.userId, items: [] });
+    
+    // Calculate effective price for each item
+    const formattedCart = {
+      ...cart.toObject(),
+      items: cart.items.map(item => ({
+        ...item,
+        effectivePrice: item.selectedSize?.price || item.menuItem?.price || 0
+      }))
+    };
+    
+    res.json(formattedCart);
   } catch (err) {
+    console.error('Cart fetch error:', err);
     res.status(500).json({ error: 'Failed to fetch cart' });
   }
 });
@@ -821,21 +907,56 @@ app.get('/api/cart/:userId', async (req, res) => {
 // Add or update a single item in the user's cart
 app.post('/api/cart/:userId/items', async (req, res) => {
   try {
-    const { menuItemId, quantity, itemType } = req.body;
+    const { menuItemId, quantity, itemType, selectedSize } = req.body;
+    
+    // Validate the selectedSize if provided
+    if (selectedSize && (!selectedSize.size || !selectedSize.price)) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid size selection - both size and price are required' 
+      });
+    }
+
     let cart = await Cart.findOne({ userId: req.params.userId });
     if (!cart) {
       cart = new Cart({ userId: req.params.userId, items: [] });
     }
-    // Find by both menuItem and itemType
-    const existingItem = cart.items.find(item => item.menuItem.toString() === menuItemId && item.itemType === itemType);
+
+    // Find existing item matching both menuItemId and selectedSize
+    const existingItem = cart.items.find(item => 
+      item.menuItem.toString() === menuItemId && 
+      item.itemType === itemType &&
+      (
+        (selectedSize && item.selectedSize && item.selectedSize.size === selectedSize.size) ||
+        (!selectedSize && !item.selectedSize)
+      )
+    );
+
     if (existingItem) {
       existingItem.quantity = quantity;
+      if (selectedSize) {
+        existingItem.selectedSize = selectedSize;
+      }
     } else {
-      cart.items.push({ menuItem: menuItemId, quantity, itemType });
+      cart.items.push({ 
+        menuItem: menuItemId, 
+        quantity, 
+        itemType,
+        selectedSize: selectedSize || undefined
+      });
     }
+
     await cart.save();
-    res.json({ success: true, cart });
+    const populatedCart = await Cart.findById(cart._id)
+      .populate({
+        path: 'items.menuItem',
+        model: 'Menu',
+        select: 'name price image priceOptions'
+      });
+      
+    res.json({ success: true, cart: populatedCart });
   } catch (err) {
+    console.error('Cart update error:', err);
     res.status(500).json({ success: false, error: 'Failed to update cart item' });
   }
 });
@@ -844,14 +965,23 @@ app.post('/api/cart/:userId/items', async (req, res) => {
 app.delete('/api/cart/:userId/items/:itemType/:menuItemId', async (req, res) => {
   try {
     const { userId, itemType, menuItemId } = req.params;
+    const size = req.query.size ? JSON.parse(req.query.size) : null;
+    
     let cart = await Cart.findOne({ userId });
     if (!cart) {
       return res.status(404).json({ success: false, error: 'Cart not found' });
     }
-    cart.items = cart.items.filter(item => !(item.menuItem.toString() === menuItemId && item.itemType === itemType));
+    
+    cart.items = cart.items.filter(item => 
+      !(item.menuItem.toString() === menuItemId && 
+        item.itemType === itemType &&
+        (size ? (item.selectedSize && item.selectedSize.size === size) : !item.selectedSize))
+    );
+    
     await cart.save();
     res.json({ success: true, cart });
   } catch (err) {
+    console.error('Remove cart item error:', err);
     res.status(500).json({ success: false, error: 'Failed to remove cart item' });
   }
 });
@@ -867,6 +997,7 @@ app.delete('/api/cart/:userId', async (req, res) => {
     await cart.save();
     res.json({ success: true, cart });
   } catch (err) {
+    console.error('Clear cart error:', err);
     res.status(500).json({ success: false, error: 'Failed to clear cart' });
   }
 });
@@ -874,17 +1005,21 @@ app.delete('/api/cart/:userId', async (req, res) => {
 // Get all orders for a specific user (user-facing)
 app.get('/api/user-orders', authenticateJWT, async (req, res) => {
   try {
-    // userId and phone are in req.user from the JWT
     const userId = req.user.userId;
     let orders = [];
     if (userId) {
-      orders = await Order.find({ userId }).populate('items.menuItem');
+      orders = await Order.find({ userId })
+        .populate('items.menuItem')
+        .sort({ date: -1 });
     } else {
       const userPhone = req.user.phone;
-      orders = await Order.find({ customerPhone: userPhone }).populate('items.menuItem');
+      orders = await Order.find({ customerPhone: userPhone })
+        .populate('items.menuItem')
+        .sort({ date: -1 });
     }
     res.json(orders);
   } catch (err) {
+    console.error('User orders fetch error:', err);
     res.status(500).json({ error: 'Failed to fetch user orders' });
   }
 });
