@@ -881,23 +881,32 @@ app.get('/api/cart/:userId', async (req, res) => {
       .populate({
         path: 'items.menuItem',
         model: 'Menu',
-        select: 'name price image priceOptions'
-      });
+        select: 'name price image priceOptions category'
+      })
+      .lean(); // Add lean() to get plain JavaScript objects
       
     if (!cart) {
       return res.json({ userId: req.params.userId, items: [] });
     }
     
-    // Calculate effective price for each item
-    const formattedCart = {
-      ...cart.toObject(),
+    // Simplify the response structure
+    const simplifiedCart = {
+      userId: cart.userId,
       items: cart.items.map(item => ({
         ...item,
-        effectivePrice: item.selectedSize?.price || item.menuItem?.price || 0
+        menuItem: {
+          _id: item.menuItem._id,
+          name: item.menuItem.name,
+          price: item.menuItem.price,
+          image: item.menuItem.image,
+          category: item.menuItem.category,
+          priceOptions: item.menuItem.priceOptions
+        },
+        effectivePrice: item.selectedSize?.price || item.menuItem.price
       }))
     };
     
-    res.json(formattedCart);
+    res.json(simplifiedCart);
   } catch (err) {
     console.error('Cart fetch error:', err);
     res.status(500).json({ error: 'Failed to fetch cart' });
