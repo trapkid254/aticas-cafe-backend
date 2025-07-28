@@ -982,7 +982,7 @@ app.post('/api/cart/:userId/items', async (req, res) => {
 
 // Delete a single item from the user's cart
 app.delete('/api/cart/:userId/items/:itemType/:menuItemId', async (req, res) => {
-  try {	
+  try {
     const { userId, itemType, menuItemId } = req.params;
     const size = req.query.size ? JSON.parse(req.query.size) : null;
     
