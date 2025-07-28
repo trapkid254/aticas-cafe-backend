@@ -147,7 +147,53 @@ app.use(express.static(path.join(__dirname, '../frontend')));
 app.use('/admin', express.static(path.join(__dirname, '../frontend/admin')));
 
 // Explicitly serve Butchery Admin
+// Serve Butchery Admin files with proper routing
 app.use('/butchery-admin', express.static(path.join(__dirname, '../frontend/butchery-admin')));
+
+// Specific route for butchery admin index page
+app.get('/butchery-admin', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/butchery-admin/butcheryindex.html'));
+});
+
+// Route for butchery admin login
+app.get('/butchery-admin/login', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/butchery-admin/butcheryadmin-login.html'));
+});
+
+// Route for butchery admin dashboard
+app.get('/butchery-admin/dashboard', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/butchery-admin/butcheryadmins.html'));
+});
+
+// Route for butchery admin bookings
+app.get('/butchery-admin/bookings', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/butchery-admin/butcherybookings.html'));
+});
+
+// Route for meat management
+app.get('/butchery-admin/meat-management', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/butchery-admin/meat-management.html'));
+});
+
+// Route for orders
+app.get('/butchery-admin/orders', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/butchery-admin/orders.html'));
+});
+
+// Route for payments
+app.get('/butchery-admin/payments', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/butchery-admin/payments.html'));
+});
+
+// Route for place order
+app.get('/butchery-admin/place-order', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/butchery-admin/place-order.html'));
+});
+
+// Route for reports
+app.get('/butchery-admin/reports', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/butchery-admin/reports.html'));
+});
 
 // JWT Auth Middleware
 function authenticateJWT(req, res, next) {
