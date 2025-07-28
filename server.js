@@ -3,7 +3,11 @@ const cors = require('cors');
 const app = express();
 // For production, allow only Netlify frontend
 app.use(cors({
-  origin: 'https://cafeaticas.netlify.app',
+  origin: [
+    'https://cafeaticas.netlify.app',
+    'https://cafeaticas.netlify.app/admin',
+    'https://cafeaticas.netlify.app/butchery-admin'
+  ],
   credentials: true // if you use cookies/auth
 }));
 
@@ -138,6 +142,12 @@ app.use(bodyParser.json());
 
 // Serve static files from frontend directory
 app.use(express.static(path.join(__dirname, '../frontend')));
+
+// Explicitly serve Cafeteria Admin
+app.use('/admin', express.static(path.join(__dirname, '../frontend/admin')));
+
+// Explicitly serve Butchery Admin
+app.use('/butchery-admin', express.static(path.join(__dirname, '../frontend/butchery-admin')));
 
 // JWT Auth Middleware
 function authenticateJWT(req, res, next) {
@@ -972,7 +982,7 @@ app.post('/api/cart/:userId/items', async (req, res) => {
 
 // Delete a single item from the user's cart
 app.delete('/api/cart/:userId/items/:itemType/:menuItemId', async (req, res) => {
-  try {
+  try {	
     const { userId, itemType, menuItemId } = req.params;
     const size = req.query.size ? JSON.parse(req.query.size) : null;
     
