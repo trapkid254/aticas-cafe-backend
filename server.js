@@ -40,7 +40,8 @@ const menuSchema = new mongoose.Schema({
   priceOptions: [{
     size: String,
     price: Number
-  }]
+  }],
+  type: { type: String, default: 'cafeteria' } // 'cafeteria' or 'butchery'
 });
 const Menu = mongoose.model('Menu', menuSchema);
 
@@ -85,7 +86,8 @@ const mealOfDaySchema = new mongoose.Schema({
   price: Number,
   image: String,
   quantity: { type: Number, default: 10 },
-  date: { type: Date, default: Date.now }
+  date: { type: Date, default: Date.now },
+  type: { type: String, default: 'cafeteria' } // 'cafeteria' or 'butchery'
 });
 const MealOfDay = mongoose.model('MealOfDay', mealOfDaySchema);
 
@@ -600,10 +602,12 @@ app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Get all menu items
+// Get all menu items (optionally filter by type)
 app.get('/api/menu', async (req, res) => {
   try {
-    const menuItems = await Menu.find();
+    const type = req.query.type;
+    const filter = type ? { type } : {};
+    const menuItems = await Menu.find(filter);
     res.json(menuItems);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch menu items' });
@@ -627,7 +631,6 @@ app.get('/api/menu/:id', async (req, res) => {
 // Add new menu item (protected)
 app.post('/api/menu', authenticateAdmin, async (req, res) => {
   try {
-    // Validate priceOptions if provided
     if (req.body.priceOptions) {
       for (const option of req.body.priceOptions) {
         if (!option.size || !option.price) {
@@ -644,8 +647,8 @@ app.post('/api/menu', authenticateAdmin, async (req, res) => {
         }
       }
     }
-    
-    const newItem = new Menu(req.body);
+    // Force type to 'butchery' if coming from butchery admin
+    const newItem = new Menu({ ...req.body, type: 'butchery' });
     await newItem.save();
     res.json({ success: true, item: newItem });
   } catch (err) {
@@ -656,7 +659,6 @@ app.post('/api/menu', authenticateAdmin, async (req, res) => {
 // Update menu item (protected)
 app.put('/api/menu/:id', authenticateAdmin, async (req, res) => {
   try {
-    // Validate priceOptions if provided
     if (req.body.priceOptions) {
       for (const option of req.body.priceOptions) {
         if (!option.size || !option.price) {
@@ -673,12 +675,10 @@ app.put('/api/menu/:id', authenticateAdmin, async (req, res) => {
         }
       }
     }
-    
-    const updateData = { ...req.body };
+    const updateData = { ...req.body, type: 'butchery' };
     if (Object.prototype.hasOwnProperty.call(updateData, 'image') && (!updateData.image || updateData.image === '')) {
       delete updateData.image;
     }
-    
     const updatedItem = await Menu.findByIdAndUpdate(req.params.id, updateData, { new: true });
     if (updatedItem) {
       res.json({ success: true, item: updatedItem });
@@ -830,10 +830,12 @@ app.post('/api/mpesa/callback', async (req, res) => {
     }
 });
 
-// Get all meals of the day
+// Get all meals of the day (optionally filter by type)
 app.get('/api/meals', async (req, res) => {
   try {
-    const meals = await MealOfDay.find();
+    const type = req.query.type;
+    const filter = type ? { type } : {};
+    const meals = await MealOfDay.find(filter);
     res.json(meals);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch meals of the day' });
@@ -843,13 +845,9 @@ app.get('/api/meals', async (req, res) => {
 // Add new meal of the day (protected)
 app.post('/api/meals', authenticateAdmin, async (req, res) => {
   try {
-    const { name, price, image, quantity } = req.body;
-    if (!name || !price || !image) {
-      return res.status(400).json({ success: false, error: 'Name, price, and image are required.' });
-    }
-    const newMeal = new MealOfDay({ name, price, image, quantity });
+    const newMeal = new MealOfDay({ ...req.body, type: 'butchery' });
     await newMeal.save();
-    res.json({ success: true, meal: newMeal });
+    res.json({ success: true, item: newMeal });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to add meal of the day' });
   }
@@ -858,9 +856,10 @@ app.post('/api/meals', authenticateAdmin, async (req, res) => {
 // Update meal of the day (protected)
 app.put('/api/meals/:id', authenticateAdmin, async (req, res) => {
   try {
-    const updatedMeal = await MealOfDay.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const updateData = { ...req.body, type: 'butchery' };
+    const updatedMeal = await MealOfDay.findByIdAndUpdate(req.params.id, updateData, { new: true });
     if (updatedMeal) {
-      res.json({ success: true, meal: updatedMeal });
+      res.json({ success: true, item: updatedMeal });
     } else {
       res.status(404).json({ success: false, error: 'Meal not found' });
     }
