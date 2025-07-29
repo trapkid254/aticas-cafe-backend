@@ -76,7 +76,8 @@ const orderSchema = new mongoose.Schema({
       longitude: Number
     }
   },
-  viewedByAdmin: { type: Boolean, default: false }
+  viewedByAdmin: { type: Boolean, default: false },
+  type: { type: String, required: true } // 'butchery' or 'cafeteria'
 });
 const Order = mongoose.model('Order', orderSchema);
 
@@ -354,7 +355,9 @@ app.delete('/api/employees/:id', authenticateAdmin, async (req, res) => {
 // Get all orders (protected)
 app.get('/api/orders', authenticateAdmin, async (req, res) => {
   try {
-    const orders = await Order.find().populate('items.menuItem');
+    const type = req.query.type;
+    const filter = type ? { type } : {};
+    const orders = await Order.find(filter).populate('items.menuItem');
     res.json(orders);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch orders' });
@@ -463,6 +466,7 @@ app.post('/api/orders', async (req, res) => {
     const total = subtotal + deliveryFee;
     
     // Prepare order data
+    const orderType = req.body.type || 'cafeteria';
     const orderData = {
       ...req.body,
       items: req.body.items.map(item => ({
@@ -475,7 +479,8 @@ app.post('/api/orders', async (req, res) => {
       userId,
       customerName,
       customerPhone,
-      viewedByAdmin: false
+      viewedByAdmin: false,
+      type: orderType
     };
     
     // Validate delivery location if order type is delivery
