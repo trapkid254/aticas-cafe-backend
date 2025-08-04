@@ -942,6 +942,11 @@ app.get('/api/cart/:userId', async (req, res) => {
         path: 'items.menuItem',
         model: 'Menu',
         select: 'name price image priceOptions category'
+      },
+      {
+        path: 'items.menuItem',
+        model: 'MealOfDay',
+        select: 'name price image'
       })
       .lean(); // Add lean() to get plain JavaScript objects
       
@@ -951,9 +956,11 @@ app.get('/api/cart/:userId', async (req, res) => {
     
     // Simplify the response structure
     const simplifiedCart = {
-      userId: cart.userId,
-      items: cart.items.map(item => ({
-        ...item,
+  userId: cart.userId,
+  items: cart.items.map(item => {
+    if (!item.menuItem) return null; // Skip invalid items
+    return {
+      ...item,
         menuItem: {
           _id: item.menuItem._id,
           name: item.menuItem.name,
@@ -962,9 +969,11 @@ app.get('/api/cart/:userId', async (req, res) => {
           category: item.menuItem.category,
           priceOptions: item.menuItem.priceOptions
         },
-        effectivePrice: item.selectedSize?.price || item.menuItem.price
-      }))
+           effectivePrice: item.selectedSize?.price || item.menuItem.price
     };
+  }).filter(item => item !== null) // Remove null items
+};
+
     
     res.json(simplifiedCart);
   } catch (err) {
