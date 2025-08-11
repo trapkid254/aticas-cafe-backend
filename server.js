@@ -1,15 +1,17 @@
 const express = require('express');
 const cors = require('cors');
 const app = express();
-// For production, allow only Netlify frontend
+
+// CORS configuration - allow all origins for development and production
 app.use(cors({
-  origin: [
-    'https://cafeaticas.netlify.app',
-    'https://cafeaticas.netlify.app/admin',
-    'https://cafeaticas.netlify.app/butchery-admin'
-  ],
-  credentials: true // if you use cookies/auth
+  origin: true, // Allow all origins
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
+
+// Handle preflight requests
+app.options('*', cors());
 
 require('dotenv').config();
 const bodyParser = require('body-parser');
@@ -1035,11 +1037,18 @@ app.post('/api/cart/:userId/items', async (req, res) => {
 
     await cart.save();
     const populatedCart = await Cart.findById(cart._id)
-      .populate({
-        path: 'items.menuItem',
-        model: 'Menu',
-        select: 'name price image priceOptions'
-      });
+      .populate([
+        {
+          path: 'items.menuItem',
+          model: 'Menu',
+          select: 'name price image priceOptions category'
+        },
+        {
+          path: 'items.menuItem',
+          model: 'MealOfDay',
+          select: 'name price image'
+        }
+      ]);
       
     res.json({ success: true, cart: populatedCart });
   } catch (err) {
