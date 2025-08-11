@@ -40,8 +40,7 @@ const menuSchema = new mongoose.Schema({
   priceOptions: [{
     size: String,
     price: Number
-  }],
-  type: { type: String, default: 'cafeteria' } // 'cafeteria' or 'butchery'
+  }]
 });
 const Menu = mongoose.model('Menu', menuSchema);
 
@@ -76,8 +75,7 @@ const orderSchema = new mongoose.Schema({
       longitude: Number
     }
   },
-  viewedByAdmin: { type: Boolean, default: false },
-  type: { type: String, required: true } // 'butchery' or 'cafeteria'
+  viewedByAdmin: { type: Boolean, default: false }
 });
 const Order = mongoose.model('Order', orderSchema);
 
@@ -87,8 +85,7 @@ const mealOfDaySchema = new mongoose.Schema({
   price: Number,
   image: String,
   quantity: { type: Number, default: 10 },
-  date: { type: Date, default: Date.now },
-  type: { type: String, default: 'cafeteria' } // 'cafeteria' or 'butchery'
+  date: { type: Date, default: Date.now }
 });
 const MealOfDay = mongoose.model('MealOfDay', mealOfDaySchema);
 
@@ -355,9 +352,7 @@ app.delete('/api/employees/:id', authenticateAdmin, async (req, res) => {
 // Get all orders (protected)
 app.get('/api/orders', authenticateAdmin, async (req, res) => {
   try {
-    const type = req.query.type;
-    const filter = type ? { type } : {};
-    const orders = await Order.find(filter).populate('items.menuItem');
+    const orders = await Order.find().populate('items.menuItem');
     res.json(orders);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch orders' });
@@ -466,7 +461,6 @@ app.post('/api/orders', async (req, res) => {
     const total = subtotal + deliveryFee;
     
     // Prepare order data
-    const orderType = req.body.type || 'cafeteria';
     const orderData = {
       ...req.body,
       items: req.body.items.map(item => ({
@@ -479,8 +473,7 @@ app.post('/api/orders', async (req, res) => {
       userId,
       customerName,
       customerPhone,
-      viewedByAdmin: false,
-      type: orderType
+      viewedByAdmin: false
     };
     
     // Validate delivery location if order type is delivery
@@ -607,12 +600,10 @@ app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Get all menu items (optionally filter by type)
+// Get all menu items
 app.get('/api/menu', async (req, res) => {
   try {
-    const type = req.query.type;
-    const filter = type ? { type } : {};
-    const menuItems = await Menu.find(filter);
+    const menuItems = await Menu.find();
     res.json(menuItems);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch menu items' });
@@ -636,6 +627,7 @@ app.get('/api/menu/:id', async (req, res) => {
 // Add new menu item (protected)
 app.post('/api/menu', authenticateAdmin, async (req, res) => {
   try {
+    // Validate priceOptions if provided
     if (req.body.priceOptions) {
       for (const option of req.body.priceOptions) {
         if (!option.size || !option.price) {
@@ -652,8 +644,8 @@ app.post('/api/menu', authenticateAdmin, async (req, res) => {
         }
       }
     }
-    // Force type to 'butchery' if coming from butchery admin
-    const newItem = new Menu({ ...req.body, type: 'butchery' });
+    
+    const newItem = new Menu(req.body);
     await newItem.save();
     res.json({ success: true, item: newItem });
   } catch (err) {
@@ -664,6 +656,7 @@ app.post('/api/menu', authenticateAdmin, async (req, res) => {
 // Update menu item (protected)
 app.put('/api/menu/:id', authenticateAdmin, async (req, res) => {
   try {
+    // Validate priceOptions if provided
     if (req.body.priceOptions) {
       for (const option of req.body.priceOptions) {
         if (!option.size || !option.price) {
@@ -680,10 +673,12 @@ app.put('/api/menu/:id', authenticateAdmin, async (req, res) => {
         }
       }
     }
-    const updateData = { ...req.body, type: 'butchery' };
+    
+    const updateData = { ...req.body };
     if (Object.prototype.hasOwnProperty.call(updateData, 'image') && (!updateData.image || updateData.image === '')) {
       delete updateData.image;
     }
+    
     const updatedItem = await Menu.findByIdAndUpdate(req.params.id, updateData, { new: true });
     if (updatedItem) {
       res.json({ success: true, item: updatedItem });
@@ -738,7 +733,17 @@ app.post('/api/mpesa/payment', async (req, res) => {
         // 2. Prepare STK push payload
         const timestamp = new Date().toISOString().replace(/[-T:.Z]/g, '').slice(0, 14);
         const password = Buffer.from(shortcode + passkey + timestamp).toString('base64');
-        const orderDetails = req.body.orderDetails ? JSON.stringify(req.body.orderDetails) : (orderId || 'AticasCafe');
+        
+        // Use orderId if provided, otherwise use orderDetails or default
+        let accountReference;
+        if (orderId) {
+            accountReference = orderId;
+        } else if (req.body.orderDetails) {
+            accountReference = JSON.stringify(req.body.orderDetails);
+        } else {
+            accountReference = 'AticasCafe';
+        }
+        
         const payload = {
             BusinessShortCode: shortcode,
             Password: password,
@@ -749,7 +754,7 @@ app.post('/api/mpesa/payment', async (req, res) => {
             PartyB: shortcode,
             PhoneNumber: phone,
             CallBackURL: 'https://aticas-backend.onrender.com/api/mpesa/callback',
-            AccountReference: orderDetails,
+            AccountReference: accountReference,
             TransactionDesc: 'Aticas Cafe Order'
         };
 
@@ -835,12 +840,10 @@ app.post('/api/mpesa/callback', async (req, res) => {
     }
 });
 
-// Get all meals of the day (optionally filter by type)
+// Get all meals of the day
 app.get('/api/meals', async (req, res) => {
   try {
-    const type = req.query.type;
-    const filter = type ? { type } : {};
-    const meals = await MealOfDay.find(filter);
+    const meals = await MealOfDay.find();
     res.json(meals);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch meals of the day' });
@@ -850,9 +853,13 @@ app.get('/api/meals', async (req, res) => {
 // Add new meal of the day (protected)
 app.post('/api/meals', authenticateAdmin, async (req, res) => {
   try {
-    const newMeal = new MealOfDay({ ...req.body, type: 'butchery' });
+    const { name, price, image, quantity } = req.body;
+    if (!name || !price || !image) {
+      return res.status(400).json({ success: false, error: 'Name, price, and image are required.' });
+    }
+    const newMeal = new MealOfDay({ name, price, image, quantity });
     await newMeal.save();
-    res.json({ success: true, item: newMeal });
+    res.json({ success: true, meal: newMeal });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to add meal of the day' });
   }
@@ -861,10 +868,9 @@ app.post('/api/meals', authenticateAdmin, async (req, res) => {
 // Update meal of the day (protected)
 app.put('/api/meals/:id', authenticateAdmin, async (req, res) => {
   try {
-    const updateData = { ...req.body, type: 'butchery' };
-    const updatedMeal = await MealOfDay.findByIdAndUpdate(req.params.id, updateData, { new: true });
+    const updatedMeal = await MealOfDay.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (updatedMeal) {
-      res.json({ success: true, item: updatedMeal });
+      res.json({ success: true, meal: updatedMeal });
     } else {
       res.status(404).json({ success: false, error: 'Meal not found' });
     }
@@ -938,42 +944,45 @@ app.post('/api/users/login',
 app.get('/api/cart/:userId', async (req, res) => {
   try {
     const cart = await Cart.findOne({ userId: req.params.userId })
-      .populate({
-        path: 'items.menuItem',
-        model: 'Menu',
-        select: 'name price image priceOptions category'
-      },
-      {
-        path: 'items.menuItem',
-        model: 'MealOfDay',
-        select: 'name price image'
-      })
-      .lean(); // Add lean() to get plain JavaScript objects
+      .populate([
+        {
+          path: 'items.menuItem',
+          model: 'Menu',
+          select: 'name price image priceOptions category'
+        },
+        {
+          path: 'items.menuItem',
+          model: 'MealOfDay',
+          select: 'name price image'
+        }
+      ])
+      .lean();
       
     if (!cart) {
       return res.json({ userId: req.params.userId, items: [] });
     }
     
-    // Simplify the response structure
+    // Simplify the response structure and handle null menuItems
     const simplifiedCart = {
-  userId: cart.userId,
-  items: cart.items.map(item => {
-    if (!item.menuItem) return null; // Skip invalid items
-    return {
-      ...item,
-        menuItem: {
-          _id: item.menuItem._id,
-          name: item.menuItem.name,
-          price: item.menuItem.price,
-          image: item.menuItem.image,
-          category: item.menuItem.category,
-          priceOptions: item.menuItem.priceOptions
-        },
-           effectivePrice: item.selectedSize?.price || item.menuItem.price
+      userId: cart.userId,
+      items: cart.items.map(item => {
+        if (!item.menuItem) {
+          return null; // Skip items with null menuItem
+        }
+        return {
+          ...item,
+          menuItem: {
+            _id: item.menuItem._id,
+            name: item.menuItem.name,
+            price: item.menuItem.price,
+            image: item.menuItem.image,
+            category: item.menuItem.category || null,
+            priceOptions: item.menuItem.priceOptions || []
+          },
+          effectivePrice: item.selectedSize?.price || item.menuItem.price
+        };
+      }).filter(item => item !== null) // Remove null items
     };
-  }).filter(item => item !== null) // Remove null items
-};
-
     
     res.json(simplifiedCart);
   } catch (err) {
