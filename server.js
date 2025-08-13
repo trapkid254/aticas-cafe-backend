@@ -92,7 +92,7 @@ const mealOfDaySchema = new mongoose.Schema({
 const MealOfDay = mongoose.model('MealOfDay', mealOfDaySchema);
 
 // Mongoose Admin model
-const Admin = require('./models/Admin');
+//const Admin = require('./models/Admin');//
 
 // Mongoose Employee model
 const employeeSchema = new mongoose.Schema({
@@ -137,7 +137,7 @@ const cartSchema = new mongoose.Schema({
 const Cart = mongoose.model('Cart', cartSchema);
 
 // Import the Booking model
-const Booking = require('./models/Booking');
+//const Booking = require('./models/Booking');//
 
 // Middleware
 app.use(bodyParser.json());
