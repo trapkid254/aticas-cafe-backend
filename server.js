@@ -149,47 +149,47 @@ app.use(express.static(path.join(__dirname, '../frontend')));
 app.use('/admin', express.static(path.join(__dirname, '../frontend/admin')));
 
 // Specific route for butchery admin index page
-//app.get('/butchery-admin', (req, res) => {
+app.get('/butchery-admin', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/butchery-admin/index.html'));
 });
 
 // Route for butchery admin login
-//app.get('/butchery-admin/login', (req, res) => {
+app.get('/butchery-admin/login', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/butchery-admin/butcheryadmin-login.html'));
 });
 
 // Route for butchery admin dashboard
-//app.get('/butchery-admin/dashboard', (req, res) => {
+app.get('/butchery-admin/dashboard', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/butchery-admin/butcheryadmins.html'));
 });
 
 // Route for butchery admin bookings
-//app.get('/butchery-admin/bookings', (req, res) => {
+app.get('/butchery-admin/bookings', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/butchery-admin/butcherybookings.html'));
 });
 
 // Route for meat management
-//app.get('/butchery-admin/meat-management', (req, res) => {
+app.get('/butchery-admin/meat-management', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/butchery-admin/meat-management.html'));
 });
 
 // Route for orders
-//app.get('/butchery-admin/orders', (req, res) => {
+app.get('/butchery-admin/orders', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/butchery-admin/orders.html'));
 });
 
 // Route for payments
-//app.get('/butchery-admin/payments', (req, res) => {
+app.get('/butchery-admin/payments', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/butchery-admin/payments.html'));
 });
 
 // Route for place order
-//app.get('/butchery-admin/place-order', (req, res) => {
+app.get('/butchery-admin/place-order', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/butchery-admin/place-order.html'));
 });
 
 // Route for reports
-//app.get('/butchery-admin/reports', (req, res) => {
+app.get('/butchery-admin/reports', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/butchery-admin/reports.html'));
 });
 
@@ -218,7 +218,7 @@ function authenticateAdmin(req, res, next) {
 // Routes
 
 // Admin login
-//app.post('/api/admin/login',
+app.post('/api/admin/login',
   body('employmentNumber').notEmpty(),
   body('password').notEmpty(),
   async (req, res) => {
@@ -241,7 +241,7 @@ function authenticateAdmin(req, res, next) {
 );
 
 // Admin CRUD endpoints (protected)
-//app.get('/api/admins', authenticateAdmin, async (req, res) => {
+app.get('/api/admins', authenticateAdmin, async (req, res) => {
   try {
     const admins = await Admin.find();
     res.json(admins);
@@ -250,7 +250,7 @@ function authenticateAdmin(req, res, next) {
   }
 });
 
-//app.post('/api/admins', authenticateAdmin,
+app.post('/api/admins', authenticateAdmin,
   body('employmentNumber').notEmpty(),
   body('password').notEmpty(),
   async (req, res) => {
@@ -268,7 +268,7 @@ function authenticateAdmin(req, res, next) {
   }
 );
 
-//app.put('/api/admins/:id', authenticateAdmin, async (req, res) => {
+app.put('/api/admins/:id', authenticateAdmin, async (req, res) => {
   try {
     const updatedAdmin = await Admin.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (updatedAdmin) {
@@ -281,7 +281,7 @@ function authenticateAdmin(req, res, next) {
   }
 });
 
-//app.delete('/api/admins/:id', authenticateAdmin, async (req, res) => {
+app.delete('/api/admins/:id', authenticateAdmin, async (req, res) => {
   try {
     const admin = await Admin.findById(req.params.id);
     if (!admin) {
@@ -302,7 +302,7 @@ function authenticateAdmin(req, res, next) {
 });
 
 // Employee CRUD endpoints (protected)
-//app.get('/api/employees', authenticateAdmin, async (req, res) => {
+app.get('/api/employees', authenticateAdmin, async (req, res) => {
   try {
     const employees = await Employee.find();
     res.json(employees);
@@ -311,7 +311,7 @@ function authenticateAdmin(req, res, next) {
   }
 });
 
-//app.post('/api/employees', authenticateAdmin, async (req, res) => {
+app.post('/api/employees', authenticateAdmin, async (req, res) => {
   try {
     const newEmployee = new Employee(req.body);
     await newEmployee.save();
@@ -321,7 +321,7 @@ function authenticateAdmin(req, res, next) {
   }
 });
 
-//app.put('/api/employees/:id', authenticateAdmin, async (req, res) => {
+app.put('/api/employees/:id', authenticateAdmin, async (req, res) => {
   try {
     const updatedEmployee = await Employee.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (updatedEmployee) {
@@ -334,7 +334,7 @@ function authenticateAdmin(req, res, next) {
   }
 });
 
-//app.delete('/api/employees/:id', authenticateAdmin, async (req, res) => {
+app.delete('/api/employees/:id', authenticateAdmin, async (req, res) => {
   try {
     const deletedEmployee = await Employee.findByIdAndDelete(req.params.id);
     if (deletedEmployee) {
@@ -348,7 +348,7 @@ function authenticateAdmin(req, res, next) {
 });
 
 // Get all orders (protected)
-//app.get('/api/orders', authenticateAdmin, async (req, res) => {
+app.get('/api/orders', authenticateAdmin, async (req, res) => {
   try {
     const orders = await Order.find().populate('items.menuItem');
     res.json(orders);
@@ -358,7 +358,7 @@ function authenticateAdmin(req, res, next) {
 });
 
 // GET a single order by ID
-//app.get('/api/orders/:id', async (req, res) => {
+app.get('/api/orders/:id', async (req, res) => {
   try {
     const order = await Order.findById(req.params.id).populate('items.menuItem');
     console.log('Fetched order:', JSON.stringify(order, null, 2));
@@ -372,7 +372,7 @@ function authenticateAdmin(req, res, next) {
 });
 
 // Add new order
-//app.post('/api/orders', async (req, res) => {
+app.post('/api/orders', async (req, res) => {
   try {
     let userId = null;
     let customerName = req.body.customerName;
@@ -520,7 +520,7 @@ function authenticateAdmin(req, res, next) {
 });
 
 // Update order status (protected)
-//app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
+app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
   try {
     const { status } = req.body;
     const order = await Order.findById(req.params.id);
@@ -599,7 +599,7 @@ function authenticateAdmin(req, res, next) {
 });
 
 // Get all menu items
-//app.get('/api/menu', async (req, res) => {
+app.get('/api/menu', async (req, res) => {
   try {
     const menuItems = await Menu.find();
     res.json(menuItems);
@@ -609,7 +609,7 @@ function authenticateAdmin(req, res, next) {
 });
 
 // Get menu item by ID
-//app.get('/api/menu/:id', async (req, res) => {
+app.get('/api/menu/:id', async (req, res) => {
   try {
     const item = await Menu.findById(req.params.id);
     if (item) {
@@ -623,7 +623,7 @@ function authenticateAdmin(req, res, next) {
 });
 
 // Add new menu item (protected)
-//app.post('/api/menu', authenticateAdmin, async (req, res) => {
+app.post('/api/menu', authenticateAdmin, async (req, res) => {
   try {
     // Validate priceOptions if provided
     if (req.body.priceOptions) {
@@ -652,7 +652,7 @@ function authenticateAdmin(req, res, next) {
 });
 
 // Update menu item (protected)
-//app.put('/api/menu/:id', authenticateAdmin, async (req, res) => {
+app.put('/api/menu/:id', authenticateAdmin, async (req, res) => {
   try {
     // Validate priceOptions if provided
     if (req.body.priceOptions) {
@@ -689,7 +689,7 @@ function authenticateAdmin(req, res, next) {
 });
 
 // Delete menu item (protected)
-//app.delete('/api/menu/:id', authenticateAdmin, async (req, res) => {
+app.delete('/api/menu/:id', authenticateAdmin, async (req, res) => {
   try {
     const deletedItem = await Menu.findByIdAndDelete(req.params.id);
     if (deletedItem) {
@@ -708,7 +708,7 @@ const consumerSecret = process.env.MPESA_CONSUMER_SECRET;
 const shortcode = process.env.MPESA_SHORTCODE;
 const passkey = process.env.MPESA_PASSKEY;
 
-//app.post('/api/mpesa/payment', async (req, res) => {
+app.post('/api/mpesa/payment', async (req, res) => {
     let { phone, amount, orderId } = req.body;
     // Sanitize and format phone number
     phone = String(phone).replace(/[-\s]/g, '');
@@ -774,7 +774,7 @@ const passkey = process.env.MPESA_PASSKEY;
 });
 
 // M-Pesa Payment Confirmation Callback
-//app.post('/api/mpesa/callback', async (req, res) => {
+app.post('/api/mpesa/callback', async (req, res) => {
     try {
         const body = req.body;
         const callback = body.Body && body.Body.stkCallback;
@@ -839,7 +839,7 @@ const passkey = process.env.MPESA_PASSKEY;
 });
 
 // Get all meals of the day
-//app.get('/api/meals', async (req, res) => {
+app.get('/api/meals', async (req, res) => {
   try {
     const meals = await MealOfDay.find();
     res.json(meals);
@@ -849,7 +849,7 @@ const passkey = process.env.MPESA_PASSKEY;
 });
 
 // Add new meal of the day (protected)
-//app.post('/api/meals', authenticateAdmin, async (req, res) => {
+app.post('/api/meals', authenticateAdmin, async (req, res) => {
   try {
     const { name, price, image, quantity } = req.body;
     if (!name || !price || !image) {
@@ -864,7 +864,7 @@ const passkey = process.env.MPESA_PASSKEY;
 });
 
 // Update meal of the day (protected)
-//app.put('/api/meals/:id', authenticateAdmin, async (req, res) => {
+app.put('/api/meals/:id', authenticateAdmin, async (req, res) => {
   try {
     const updatedMeal = await MealOfDay.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (updatedMeal) {
@@ -878,7 +878,7 @@ const passkey = process.env.MPESA_PASSKEY;
 });
 
 // Delete meal of the day (protected)
-//app.delete('/api/meals/:id', authenticateAdmin, async (req, res) => {
+app.delete('/api/meals/:id', authenticateAdmin, async (req, res) => {
   try {
     const deletedMeal = await MealOfDay.findByIdAndDelete(req.params.id);
     if (deletedMeal) {
@@ -892,7 +892,7 @@ const passkey = process.env.MPESA_PASSKEY;
 });
 
 // User registration
-//app.post('/api/users/register',
+app.post('/api/users/register',
   body('name').notEmpty(),
   body('phone').notEmpty(),
   body('email').isEmail(),
@@ -916,7 +916,7 @@ const passkey = process.env.MPESA_PASSKEY;
 );
 
 // User login
-//app.post('/api/users/login',
+app.post('/api/users/login',
   body('phone').notEmpty(),
   body('password').notEmpty(),
   async (req, res) => {
@@ -939,7 +939,7 @@ const passkey = process.env.MPESA_PASSKEY;
 );
 
 // Get cart for user
-//app.get('/api/cart/:userId', async (req, res) => {
+app.get('/api/cart/:userId', async (req, res) => {
   try {
     const cart = await Cart.findOne({ userId: req.params.userId })
       .populate([
@@ -990,7 +990,7 @@ const passkey = process.env.MPESA_PASSKEY;
 });
 
 // Add or update a single item in the user's cart
-//app.post('/api/cart/:userId/items', async (req, res) => {
+app.post('/api/cart/:userId/items', async (req, res) => {
   try {
     const { menuItemId, quantity, itemType, selectedSize } = req.body;
     
@@ -1054,7 +1054,7 @@ const passkey = process.env.MPESA_PASSKEY;
 });
 
 // Delete a single item from the user's cart
-//app.delete('/api/cart/:userId/items/:type/:menuItemId', async (req, res) => {
+app.delete('/api/cart/:userId/items/:type/:menuItemId', async (req, res) => {
   try {
     const { userId, type, menuItemId } = req.params;
     const size = req.query.size ? JSON.parse(req.query.size) : null;
@@ -1079,7 +1079,7 @@ const passkey = process.env.MPESA_PASSKEY;
 });
 
 // Clear all items from a user's cart
-//app.delete('/api/cart/:userId', async (req, res) => {
+app.delete('/api/cart/:userId', async (req, res) => {
   try {
     let cart = await Cart.findOne({ userId: req.params.userId });
     if (!cart) {
@@ -1095,7 +1095,7 @@ const passkey = process.env.MPESA_PASSKEY;
 });
 
 // Get all orders for a specific user (user-facing)
-//app.get('/api/user-orders', authenticateJWT, async (req, res) => {
+app.get('/api/user-orders', authenticateJWT, async (req, res) => {
   try {
     const userId = req.user.userId;
     let orders = [];
@@ -1117,7 +1117,7 @@ const passkey = process.env.MPESA_PASSKEY;
 });
 
 // Bookings endpoints
-//app.post('/api/bookings', async (req, res) => {
+app.post('/api/bookings', async (req, res) => {
   try {
     const booking = new Booking(req.body);
     await booking.save();
@@ -1128,7 +1128,7 @@ const passkey = process.env.MPESA_PASSKEY;
   }
 });
 
-//app.get('/api/bookings', async (req, res) => {
+app.get('/api/bookings', async (req, res) => {
   try {
     const bookings = await Booking.find().sort({ createdAt: -1 });
     res.json({ success: true, bookings });
