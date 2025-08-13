@@ -148,13 +148,9 @@ app.use(express.static(path.join(__dirname, '../frontend')));
 // Explicitly serve Cafeteria Admin
 app.use('/admin', express.static(path.join(__dirname, '../frontend/admin')));
 
-// Explicitly serve Butchery Admin
-// Serve Butchery Admin files with proper routing
-app.use('/butchery-admin', express.static(path.join(__dirname, '../frontend/butchery-admin')));
-
 // Specific route for butchery admin index page
 app.get('/butchery-admin', (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/butchery-admin/butcheryindex.html'));
+  res.sendFile(path.join(__dirname, '../frontend/butchery-admin/index.html'));
 });
 
 // Route for butchery admin login
@@ -1058,9 +1054,9 @@ app.post('/api/cart/:userId/items', async (req, res) => {
 });
 
 // Delete a single item from the user's cart
-app.delete('/api/cart/:userId/items/:itemType/:menuItemId', async (req, res) => {
+app.delete('/api/cart/:userId/items/:type/:menuItemId', async (req, res) => {
   try {
-    const { userId, itemType, menuItemId } = req.params;
+    const { userId, type, menuItemId } = req.params;
     const size = req.query.size ? JSON.parse(req.query.size) : null;
     
     let cart = await Cart.findOne({ userId });
@@ -1070,7 +1066,7 @@ app.delete('/api/cart/:userId/items/:itemType/:menuItemId', async (req, res) => 
     
     cart.items = cart.items.filter(item => 
       !(item.menuItem.toString() === menuItemId && 
-        item.itemType === itemType &&
+        item.itemType === type &&
         (size ? (item.selectedSize && item.selectedSize.size === size) : !item.selectedSize))
     );
     
