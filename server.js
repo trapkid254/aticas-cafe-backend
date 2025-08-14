@@ -1130,7 +1130,82 @@ app.delete('/api/cart/:userId/items/:itemId', authenticateJWT, async (req, res) 
       )
     );
 
-    if (cart.items.length === initialLength) {
+    if (cart.items.length === initialLength) {    // ...existing code...
+    
+    app.patch('/api/cart/:userId/items', authenticateJWT, async (req, res) => {
+      try {
+        const { menuItemId, quantity, itemType, selectedSize } = req.body;
+    
+        if (!mongoose.Types.ObjectId.isValid(menuItemId)) {
+          return res.status(400).json({ error: 'Invalid menuItemId' });
+        }
+    
+        let cart = await Cart.findOne({ userId: req.params.userId }) ||
+                   new Cart({ userId: req.params.userId, items: [] });
+    
+        // --- NEW: If selectedSize is a string, reconstruct the object ---
+        let selectedSizeObj = null;
+        if (selectedSize && typeof selectedSize === 'string') {
+          let foundMenu = null;
+          if (itemType === 'Menu') {
+            foundMenu = await Menu.findById(menuItemId);
+          } else if (itemType === 'MealOfDay') {
+            foundMenu = await MealOfDay.findById(menuItemId);
+          }
+          if (foundMenu && Array.isArray(foundMenu.priceOptions)) {
+            const match = foundMenu.priceOptions.find(opt => opt.size === selectedSize);
+            if (match) {
+              selectedSizeObj = { size: match.size, price: match.price };
+            }
+          }
+          // fallback: just use the string if not found
+          if (!selectedSizeObj) selectedSizeObj = { size: selectedSize };
+        } else if (selectedSize && typeof selectedSize === 'object') {
+          selectedSizeObj = selectedSize;
+        }
+    
+        // Find existing item with EXACT same properties
+        const existingItemIndex = cart.items.findIndex(item =>
+          item.menuItem.toString() === menuItemId &&
+          item.itemType === itemType &&
+          (
+            (selectedSizeObj && item.selectedSize?.size === selectedSizeObj.size) ||
+            (!selectedSizeObj && !item.selectedSize)
+          )
+        );
+    
+        if (existingItemIndex >= 0) {
+          cart.items[existingItemIndex].quantity = quantity;
+          if (selectedSizeObj) {
+            cart.items[existingItemIndex].selectedSize = selectedSizeObj;
+          }
+        } else {
+          if (quantity > 0) {
+            cart.items.push({
+              menuItem: menuItemId,
+              quantity,
+              itemType,
+              selectedSize: selectedSizeObj || undefined
+            });
+          }
+        }
+    
+        await cart.save();
+    
+        const populatedCart = await Cart.findById(cart._id)
+          .populate({
+            path: 'items.menuItem',
+            select: 'name price image priceOptions category'
+          });
+    
+        res.json(populatedCart);
+      } catch (err) {
+        console.error('Cart update error:', err);
+        res.status(500).json({ error: 'Failed to update cart' });
+      }
+    });
+    
+    // ...existing code...
       return res.status(404).json({ error: 'Item not found in cart' });
     }
 
