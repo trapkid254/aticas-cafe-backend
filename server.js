@@ -1002,7 +1002,7 @@ app.get('/api/cart/:userId', async (req, res) => {
       return res.json({ userId: req.params.userId, items: [] });
     }
 
-    // Manually populate each item based on its type
+    // Manually populate each item
     for (let item of cart.items) {
       if (item.itemType === 'Menu') {
         item.menuItem = await Menu.findById(item.menuItem)
@@ -1017,6 +1017,118 @@ app.get('/api/cart/:userId', async (req, res) => {
   } catch (err) {
     console.error('Cart fetch error:', err);
     res.status(500).json({ error: 'Failed to fetch cart' });
+  }
+});
+
+app.patch('/api/cart/:userId/items', async (req, res) => {
+  try {
+    const { menuItemId, quantity, itemType, selectedSize } = req.body;
+    
+    if (!menuItemId || !itemType || typeof quantity !== 'number') {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid request data' 
+      });
+    }
+
+    let cart = await Cart.findOne({ userId: req.params.userId });
+    if (!cart) {
+      cart = new Cart({ userId: req.params.userId, items: [] });
+    }
+
+    const existingItemIndex = cart.items.findIndex(item => 
+      item.menuItem.toString() === menuItemId && 
+      item.itemType === itemType &&
+      (
+        (selectedSize && item.selectedSize && 
+         item.selectedSize.size === selectedSize.size) ||
+        (!selectedSize && !item.selectedSize)
+      )
+    );
+
+    if (existingItemIndex >= 0) {
+      if (quantity <= 0) {
+        cart.items.splice(existingItemIndex, 1);
+      } else {
+        cart.items[existingItemIndex].quantity = quantity;
+        if (selectedSize) {
+          cart.items[existingItemIndex].selectedSize = selectedSize;
+        }
+      }
+    } else if (quantity > 0) {
+      cart.items.push({ 
+        menuItem: menuItemId, 
+        quantity, 
+        itemType,
+        selectedSize: selectedSize || undefined
+      });
+    }
+
+    await cart.save();
+    
+    const populatedCart = await Cart.findById(cart._id)
+      .populate({
+        path: 'items.menuItem',
+        select: 'name price image priceOptions category'
+      });
+      
+    res.json({ success: true, cart: populatedCart });
+  } catch (err) {
+    console.error('Cart update error:', err);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to update cart item' 
+    });
+  }
+});
+
+app.delete('/api/cart/:userId/items/:menuItemId', async (req, res) => {
+  try {
+    const { itemType, size } = req.query;
+    
+    let cart = await Cart.findOne({ userId: req.params.userId });
+    if (!cart) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Cart not found' 
+      });
+    }
+
+    const initialLength = cart.items.length;
+    
+    cart.items = cart.items.filter(item => 
+      !(item.menuItem.toString() === req.params.menuItemId && 
+        item.itemType === itemType &&
+        (
+          (size && item.selectedSize && 
+           item.selectedSize.size === size) ||
+          (!size && !item.selectedSize)
+        )
+      )
+    );
+
+    if (cart.items.length === initialLength) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Item not found in cart' 
+      });
+    }
+
+    await cart.save();
+    
+    const populatedCart = await Cart.findById(cart._id)
+      .populate({
+        path: 'items.menuItem',
+        select: 'name price image priceOptions category'
+      });
+      
+    res.json({ success: true, cart: populatedCart });
+  } catch (err) {
+    console.error('Cart item removal error:', err);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to remove item from cart' 
+    });
   }
 });
 
