@@ -38,11 +38,12 @@ const menuSchema = new mongoose.Schema({
   price: Number,
   category: String,
   image: String,
-  quantity: { type: Number, default: 10 },
+  quantity: { type: Number, default: 1000 },
   priceOptions: [{
     size: String,
     price: Number
-  }]
+  }],
+  date: { type: Date, default: Date.now }
 });
 const Menu = mongoose.model('Menu', menuSchema);
 
@@ -83,10 +84,16 @@ const Order = mongoose.model('Order', orderSchema);
 
 // Mongoose MealOfDay model
 const mealOfDaySchema = new mongoose.Schema({
-  name: String,
+   name: String,
+  description: String,
   price: Number,
+  category: String,
   image: String,
-  quantity: { type: Number, default: 10 },
+  quantity: { type: Number, default: 1000 },
+  priceOptions: [{
+    size: String,
+    price: Number
+  }],
   date: { type: Date, default: Date.now }
 });
 const MealOfDay = mongoose.model('MealOfDay', mealOfDaySchema);
@@ -124,8 +131,15 @@ const cartSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   items: [
     {
-      itemType: { type: String, enum: ['Menu', 'MealOfDay'], required: true },
-      menuItem: { type: mongoose.Schema.Types.ObjectId, required: true, refPath: 'items.itemType' },
+      itemType: { 
+        type: String, 
+        enum: ['Menu', 'MealOfDay'],
+        required: true
+      },
+      menuItem: { 
+        type: mongoose.Schema.Types.ObjectId, 
+        required: true, 
+        refPath: 'items.itemType' },
       quantity: { type: Number, default: 1 },
       selectedSize: {
         size: String,
@@ -133,8 +147,10 @@ const cartSchema = new mongoose.Schema({
       }
     }
   ]
+}, {
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
 });
-const Cart = mongoose.model('Cart', cartSchema);
 
 // Import the Booking model
 const Booking = require('./models/Booking');
@@ -956,49 +972,42 @@ app.post('/api/users/login',
     }
   }
 );
-
 // Get cart for user
 app.get('/api/cart/:userId', async (req, res) => {
   try {
     const cart = await Cart.findOne({ userId: req.params.userId })
-      .populate([
-        {
-          path: 'items.menuItem',
-          model: 'Menu',
-          select: 'name price image priceOptions category'
+      .populate({
+        path: 'items.menuItem',
+        model: function() {
+          return this.itemType; // Dynamic model selection
         },
-        {
-          path: 'items.menuItem',
-          model: 'MealOfDay',
-          select: 'name price image'
-        }
-      ])
+        select: 'name price image priceOptions category'
+      })
       .lean();
       
     if (!cart) {
       return res.json({ userId: req.params.userId, items: [] });
     }
     
-    // Simplify the response structure and handle null menuItems
+    // Process items consistently
     const simplifiedCart = {
       userId: cart.userId,
       items: cart.items.map(item => {
-        if (!item.menuItem) {
-          return null; // Skip items with null menuItem
-        }
+        if (!item.menuItem) return null;
+        
         return {
           ...item,
           menuItem: {
             _id: item.menuItem._id,
             name: item.menuItem.name,
             price: item.menuItem.price,
-            image: item.menuItem.image,
+            image: item.menuItem.image || 'images/varied menu.jpeg',
             category: item.menuItem.category || null,
             priceOptions: item.menuItem.priceOptions || []
           },
           effectivePrice: item.selectedSize?.price || item.menuItem.price
         };
-      }).filter(item => item !== null) // Remove null items
+      }).filter(Boolean)
     };
     
     res.json(simplifiedCart);
