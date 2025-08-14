@@ -127,8 +127,13 @@ const userSchema = new mongoose.Schema({
 const User = mongoose.model('User', userSchema);
 
 // Mongoose Cart model
+// Mongoose Cart model
 const cartSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  userId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: true 
+  },
   items: [
     {
       itemType: { 
@@ -139,8 +144,12 @@ const cartSchema = new mongoose.Schema({
       menuItem: { 
         type: mongoose.Schema.Types.ObjectId, 
         required: true, 
-        refPath: 'items.itemType' },
-      quantity: { type: Number, default: 1 },
+        refPath: 'items.itemType' 
+      },
+      quantity: { 
+        type: Number, 
+        default: 1 
+      },
       selectedSize: {
         size: String,
         price: Number
@@ -151,6 +160,18 @@ const cartSchema = new mongoose.Schema({
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
 });
+
+// Virtual for calculating cart total
+cartSchema.virtual('total').get(function() {
+  return this.items.reduce((total, item) => {
+    const price = item.selectedSize?.price || 
+                 (item.menuItem?.price || 0);
+    return total + (price * item.quantity);
+  }, 0);
+});
+
+// Create the Cart model
+const Cart = mongoose.model('Cart', cartSchema);
 
 // Import the Booking model
 const Booking = require('./models/Booking');
