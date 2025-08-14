@@ -996,42 +996,24 @@ app.post('/api/users/login',
 // Get cart for user
 app.get('/api/cart/:userId', async (req, res) => {
   try {
-    const cart = await Cart.findOne({ userId: req.params.userId })
-      .populate({
-        path: 'items.menuItem',
-        model: function() {
-          return this.itemType; // Dynamic model selection
-        },
-        select: 'name price image priceOptions category'
-      })
-      .lean();
-      
+    let cart = await Cart.findOne({ userId: req.params.userId }).lean();
+    
     if (!cart) {
       return res.json({ userId: req.params.userId, items: [] });
     }
+
+    // Manually populate each item based on its type
+    for (let item of cart.items) {
+      if (item.itemType === 'Menu') {
+        item.menuItem = await Menu.findById(item.menuItem)
+          .select('name price image priceOptions category');
+      } else if (item.itemType === 'MealOfDay') {
+        item.menuItem = await MealOfDay.findById(item.menuItem)
+          .select('name price image');
+      }
+    }
     
-    // Process items consistently
-    const simplifiedCart = {
-      userId: cart.userId,
-      items: cart.items.map(item => {
-        if (!item.menuItem) return null;
-        
-        return {
-          ...item,
-          menuItem: {
-            _id: item.menuItem._id,
-            name: item.menuItem.name,
-            price: item.menuItem.price,
-            image: item.menuItem.image || 'images/varied menu.jpeg',
-            category: item.menuItem.category || null,
-            priceOptions: item.menuItem.priceOptions || []
-          },
-          effectivePrice: item.selectedSize?.price || item.menuItem.price
-        };
-      }).filter(Boolean)
-    };
-    
-    res.json(simplifiedCart);
+    res.json(cart);
   } catch (err) {
     console.error('Cart fetch error:', err);
     res.status(500).json({ error: 'Failed to fetch cart' });
@@ -1081,65 +1063,18 @@ app.post('/api/cart/:userId/items', async (req, res) => {
     }
 
     await cart.save();
+    
+    // Simplified populate (Solution 3)
     const populatedCart = await Cart.findById(cart._id)
-      .populate([
-        {
-          path: 'items.menuItem',
-          model: 'Menu',
-          select: 'name price image priceOptions category'
-        },
-        {
-          path: 'items.menuItem',
-          model: 'MealOfDay',
-          select: 'name price image'
-        }
-      ]);
+      .populate({
+        path: 'items.menuItem',
+        select: 'name price image priceOptions category'
+      });
       
     res.json({ success: true, cart: populatedCart });
   } catch (err) {
     console.error('Cart update error:', err);
     res.status(500).json({ success: false, error: 'Failed to update cart item' });
-  }
-});
-
-// Delete a single item from the user's cart
-app.delete('/api/cart/:userId/items/:type/:menuItemId', async (req, res) => {
-  try {
-    const { userId, type, menuItemId } = req.params;
-    const size = req.query.size ? JSON.parse(req.query.size) : null;
-    
-    let cart = await Cart.findOne({ userId });
-    if (!cart) {
-      return res.status(404).json({ success: false, error: 'Cart not found' });
-    }
-    
-    cart.items = cart.items.filter(item => 
-      !(item.menuItem.toString() === menuItemId && 
-        item.itemType === type &&
-        (size ? (item.selectedSize && item.selectedSize.size === size) : !item.selectedSize))
-    );
-    
-    await cart.save();
-    res.json({ success: true, cart });
-  } catch (err) {
-    console.error('Remove cart item error:', err);
-    res.status(500).json({ success: false, error: 'Failed to remove cart item' });
-  }
-});
-
-// Clear all items from a user's cart
-app.delete('/api/cart/:userId', async (req, res) => {
-  try {
-    let cart = await Cart.findOne({ userId: req.params.userId });
-    if (!cart) {
-      return res.status(404).json({ success: false, error: 'Cart not found' });
-    }
-    cart.items = [];
-    await cart.save();
-    res.json({ success: true, cart });
-  } catch (err) {
-    console.error('Clear cart error:', err);
-    res.status(500).json({ success: false, error: 'Failed to clear cart' });
   }
 });
 
