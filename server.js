@@ -1026,7 +1026,7 @@ app.patch('/api/cart/:userId/items', authenticateJWT, async (req, res) => {
         const userId = req.params.userId;
         
         // Validate input
-        if (!mongoose.Types.ObjectId.isValid(menuItemId) {
+        if (!mongoose.Types.ObjectId.isValid(menuItemId)) {
             return res.status(400).json({ 
                 success: false, 
                 error: 'Invalid menuItemId' 
@@ -1103,13 +1103,15 @@ app.delete('/api/cart/:userId/items/:menuItemId', authenticateJWT, async (req, r
         const initialLength = cart.items.length;
         
         cart.items = cart.items.filter(item => 
-            !(item.menuItem.toString() === menuItemId && 
-              item.itemType === itemType &&
-              (
-                  (size && item.selectedSize && 
-                   item.selectedSize.size === size) ||
-                  (!size && !item.selectedSize)
-              )
+            !(
+                item.menuItem.toString() === menuItemId && 
+                item.itemType === itemType &&
+                (
+                    (size && item.selectedSize && 
+                     item.selectedSize.size === size) ||
+                    (!size && !item.selectedSize)
+                )
+            )
         );
 
         if (cart.items.length === initialLength) {
