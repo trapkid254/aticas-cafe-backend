@@ -127,7 +127,6 @@ const userSchema = new mongoose.Schema({
 const User = mongoose.model('User', userSchema);
 
 // Mongoose Cart model
-// Mongoose Cart model
 const cartSchema = new mongoose.Schema({
   userId: { 
     type: mongoose.Schema.Types.ObjectId, 
@@ -1025,6 +1024,7 @@ app.post('/api/users/login',
     }
   }
 );
+
 // Get cart for user
 app.get('/api/cart/:userId', async (req, res) => {
   try {
@@ -1039,6 +1039,16 @@ app.get('/api/cart/:userId', async (req, res) => {
       if (item.itemType === 'Menu') {
         item.menuItem = await Menu.findById(item.menuItem)
           .select('name price image priceOptions category');
+        
+        // Ensure selectedSize matches a valid option
+        if (item.selectedSize && item.menuItem.priceOptions) {
+          const validSize = item.menuItem.priceOptions.some(
+            opt => opt.size === item.selectedSize.size
+          );
+          if (!validSize) {
+            item.selectedSize = null;
+          }
+        }
       } else if (item.itemType === 'MealOfDay') {
         item.menuItem = await MealOfDay.findById(item.menuItem)
           .select('name price image');
@@ -1052,6 +1062,7 @@ app.get('/api/cart/:userId', async (req, res) => {
   }
 });
 
+// Update cart item
 app.patch('/api/cart/:userId/items', authenticateJWT, async (req, res) => {
   try {
     const { menuItemId, quantity, itemType, selectedSize } = req.body;
@@ -1064,32 +1075,65 @@ app.patch('/api/cart/:userId/items', authenticateJWT, async (req, res) => {
     let cart = await Cart.findOne({ userId: req.params.userId }) || 
                new Cart({ userId: req.params.userId, items: [] });
 
+    // Normalize selectedSize format
+    let normalizedSize = null;
+    if (selectedSize) {
+      if (typeof selectedSize === 'string') {
+        // If size comes as string, try to find matching price
+        let menuItem;
+        if (itemType === 'Menu') {
+          menuItem = await Menu.findById(menuItemId);
+        } else if (itemType === 'MealOfDay') {
+          menuItem = await MealOfDay.findById(menuItemId);
+        }
+        
+        if (menuItem && menuItem.priceOptions) {
+          const sizeOption = menuItem.priceOptions.find(opt => opt.size === selectedSize);
+          if (sizeOption) {
+            normalizedSize = {
+              size: selectedSize,
+              price: sizeOption.price
+            };
+          } else {
+            normalizedSize = { size: selectedSize };
+          }
+        } else {
+          normalizedSize = { size: selectedSize };
+        }
+      } else if (selectedSize.size) {
+        // If it's already an object with size property
+        normalizedSize = selectedSize;
+      }
+    }
+
     // Find existing item with EXACT same properties
     const existingItemIndex = cart.items.findIndex(item => 
       item.menuItem.toString() === menuItemId &&
       item.itemType === itemType &&
       (
-        (selectedSize && item.selectedSize?.size === selectedSize.size) ||
-        (!selectedSize && !item.selectedSize)
+        (normalizedSize && item.selectedSize?.size === normalizedSize.size) ||
+        (!normalizedSize && !item.selectedSize)
       )
     );
 
     if (existingItemIndex >= 0) {
       // Update existing item
-      cart.items[existingItemIndex].quantity = quantity;
-      if (selectedSize) {
-        cart.items[existingItemIndex].selectedSize = selectedSize;
+      if (quantity < 1) {
+        cart.items.splice(existingItemIndex, 1);
+      } else {
+        cart.items[existingItemIndex].quantity = quantity;
+        if (normalizedSize) {
+          cart.items[existingItemIndex].selectedSize = normalizedSize;
+        }
       }
-    } else {
-      // Add new item only if quantity > 0
-      if (quantity > 0) {
-        cart.items.push({
-          menuItem: menuItemId,
-          quantity,
-          itemType,
-          selectedSize: selectedSize || undefined
-        });
-      }
+    } else if (quantity > 0) {
+      // Add new item
+      cart.items.push({
+        menuItem: menuItemId,
+        quantity,
+        itemType,
+        selectedSize: normalizedSize || undefined
+      });
     }
 
     await cart.save();
@@ -1108,6 +1152,7 @@ app.patch('/api/cart/:userId/items', authenticateJWT, async (req, res) => {
   }
 });
 
+// Remove item from cart
 app.delete('/api/cart/:userId/items/:itemId', authenticateJWT, async (req, res) => {
   try {
     const { itemType, size } = req.query;
@@ -1130,82 +1175,7 @@ app.delete('/api/cart/:userId/items/:itemId', authenticateJWT, async (req, res) 
       )
     );
 
-    if (cart.items.length === initialLength) {    // ...existing code...
-    
-    app.patch('/api/cart/:userId/items', authenticateJWT, async (req, res) => {
-      try {
-        const { menuItemId, quantity, itemType, selectedSize } = req.body;
-    
-        if (!mongoose.Types.ObjectId.isValid(menuItemId)) {
-          return res.status(400).json({ error: 'Invalid menuItemId' });
-        }
-    
-        let cart = await Cart.findOne({ userId: req.params.userId }) ||
-                   new Cart({ userId: req.params.userId, items: [] });
-    
-        // --- NEW: If selectedSize is a string, reconstruct the object ---
-        let selectedSizeObj = null;
-        if (selectedSize && typeof selectedSize === 'string') {
-          let foundMenu = null;
-          if (itemType === 'Menu') {
-            foundMenu = await Menu.findById(menuItemId);
-          } else if (itemType === 'MealOfDay') {
-            foundMenu = await MealOfDay.findById(menuItemId);
-          }
-          if (foundMenu && Array.isArray(foundMenu.priceOptions)) {
-            const match = foundMenu.priceOptions.find(opt => opt.size === selectedSize);
-            if (match) {
-              selectedSizeObj = { size: match.size, price: match.price };
-            }
-          }
-          // fallback: just use the string if not found
-          if (!selectedSizeObj) selectedSizeObj = { size: selectedSize };
-        } else if (selectedSize && typeof selectedSize === 'object') {
-          selectedSizeObj = selectedSize;
-        }
-    
-        // Find existing item with EXACT same properties
-        const existingItemIndex = cart.items.findIndex(item =>
-          item.menuItem.toString() === menuItemId &&
-          item.itemType === itemType &&
-          (
-            (selectedSizeObj && item.selectedSize?.size === selectedSizeObj.size) ||
-            (!selectedSizeObj && !item.selectedSize)
-          )
-        );
-    
-        if (existingItemIndex >= 0) {
-          cart.items[existingItemIndex].quantity = quantity;
-          if (selectedSizeObj) {
-            cart.items[existingItemIndex].selectedSize = selectedSizeObj;
-          }
-        } else {
-          if (quantity > 0) {
-            cart.items.push({
-              menuItem: menuItemId,
-              quantity,
-              itemType,
-              selectedSize: selectedSizeObj || undefined
-            });
-          }
-        }
-    
-        await cart.save();
-    
-        const populatedCart = await Cart.findById(cart._id)
-          .populate({
-            path: 'items.menuItem',
-            select: 'name price image priceOptions category'
-          });
-    
-        res.json(populatedCart);
-      } catch (err) {
-        console.error('Cart update error:', err);
-        res.status(500).json({ error: 'Failed to update cart' });
-      }
-    });
-    
-    // ...existing code...
+    if (cart.items.length === initialLength) {
       return res.status(404).json({ error: 'Item not found in cart' });
     }
 
@@ -1217,61 +1187,23 @@ app.delete('/api/cart/:userId/items/:itemId', authenticateJWT, async (req, res) 
   }
 });
 
-// Add or update a single item in the user's cart
-app.post('/api/cart/:userId/items', async (req, res) => {
+// Clear cart
+app.delete('/api/cart/:userId', authenticateJWT, async (req, res) => {
   try {
-    const { menuItemId, quantity, itemType, selectedSize } = req.body;
-    
-    // Validate the selectedSize if provided
-    if (selectedSize && (!selectedSize.size || !selectedSize.price)) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Invalid size selection - both size and price are required' 
-      });
-    }
-
-    let cart = await Cart.findOne({ userId: req.params.userId });
-    if (!cart) {
-      cart = new Cart({ userId: req.params.userId, items: [] });
-    }
-
-    // Find existing item matching both menuItemId and selectedSize
-    const existingItem = cart.items.find(item => 
-      item.menuItem.toString() === menuItemId && 
-      item.itemType === itemType &&
-      (
-        (selectedSize && item.selectedSize && item.selectedSize.size === selectedSize.size) ||
-        (!selectedSize && !item.selectedSize)
-      )
+    const result = await Cart.findOneAndUpdate(
+      { userId: req.params.userId },
+      { $set: { items: [] } },
+      { new: true }
     );
-
-    if (existingItem) {
-      existingItem.quantity = quantity;
-      if (selectedSize) {
-        existingItem.selectedSize = selectedSize;
-      }
-    } else {
-      cart.items.push({ 
-        menuItem: menuItemId, 
-        quantity, 
-        itemType,
-        selectedSize: selectedSize || undefined
-      });
-    }
-
-    await cart.save();
     
-    // Simplified populate (Solution 3)
-    const populatedCart = await Cart.findById(cart._id)
-      .populate({
-        path: 'items.menuItem',
-        select: 'name price image priceOptions category'
-      });
-      
-    res.json({ success: true, cart: populatedCart });
+    if (!result) {
+      return res.status(404).json({ error: 'Cart not found' });
+    }
+    
+    res.json({ success: true });
   } catch (err) {
-    console.error('Cart update error:', err);
-    res.status(500).json({ success: false, error: 'Failed to update cart item' });
+    console.error('Clear cart error:', err);
+    res.status(500).json({ error: 'Failed to clear cart' });
   }
 });
 
