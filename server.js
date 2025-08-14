@@ -920,14 +920,24 @@ app.post('/api/users/login',
   body('phone').notEmpty(),
   body('password').notEmpty(),
   async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
-    const { phone, password } = req.body;
     try {
       const user = await User.findOne({ phone });
       if (user && await bcrypt.compare(password, user.password)) {
-        const token = jwt.sign({ userId: user._id, name: user.name, phone: user.phone }, process.env.JWT_SECRET, { expiresIn: '1d' });
-        res.json({ success: true, token, user: { _id: user._id, name: user.name, phone: user.phone, email: user.email } });
+        const token = jwt.sign({
+           userId: user._id,  // Changed from _id to userId
+          name: user.name, 
+          phone: user.phone 
+        }, process.env.JWT_SECRET, { expiresIn: '1d' });
+        res.json({ 
+          success: true, 
+          token, 
+          user: { 
+            _id: user._id, 
+            name: user.name, 
+            phone: user.phone, 
+            email: user.email 
+          } 
+        });
       } else {
         res.status(401).json({ success: false, error: 'Invalid credentials' });
       }
