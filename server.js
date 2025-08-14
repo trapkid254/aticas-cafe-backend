@@ -920,14 +920,23 @@ app.post('/api/users/login',
   body('phone').notEmpty(),
   body('password').notEmpty(),
   async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
     try {
+      // Destructure phone and password from req.body
+      const { phone, password } = req.body;
+      
       const user = await User.findOne({ phone });
       if (user && await bcrypt.compare(password, user.password)) {
-        const token = jwt.sign({
-           userId: user._id,  // Changed from _id to userId
+        const token = jwt.sign({ 
+          userId: user._id,
           name: user.name, 
           phone: user.phone 
         }, process.env.JWT_SECRET, { expiresIn: '1d' });
+        
         res.json({ 
           success: true, 
           token, 
