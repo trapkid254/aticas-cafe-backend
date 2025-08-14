@@ -4,10 +4,9 @@ const app = express();
 
 // CORS configuration - allow all origins for development and production
 app.use(cors({
-  origin: true, // Allow all origins
-  credentials: true,
+  origin: '*', // Allow all origins without credentials
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'x-access-token']
 }));
 
 // Handle preflight requests
@@ -1062,8 +1061,8 @@ app.get('/api/cart/:userId', async (req, res) => {
   }
 });
 
-// Update cart item
-app.patch('/api/cart/:userId/items', authenticateJWT, async (req, res) => {
+// Update cart item - use authenticated user's ID from JWT
+app.patch('/api/cart/items', authenticateJWT, async (req, res) => {
   try {
     const { menuItemId, quantity, itemType, selectedSize } = req.body;
     
@@ -1072,8 +1071,10 @@ app.patch('/api/cart/:userId/items', authenticateJWT, async (req, res) => {
       return res.status(400).json({ error: 'Invalid menuItemId' });
     }
 
-    let cart = await Cart.findOne({ userId: req.params.userId }) || 
-               new Cart({ userId: req.params.userId, items: [] });
+    // Use the authenticated user's ID from JWT
+    const userId = req.user.userId;
+    let cart = await Cart.findOne({ userId }) || 
+               new Cart({ userId, items: [] });
 
     // Normalize selectedSize format
     let normalizedSize = null;
@@ -1152,11 +1153,11 @@ app.patch('/api/cart/:userId/items', authenticateJWT, async (req, res) => {
   }
 });
 
-// Remove item from cart
-app.delete('/api/cart/:userId/items/:itemId', authenticateJWT, async (req, res) => {
+// Remove item from cart - use authenticated user's ID from JWT
+app.delete('/api/cart/items/:itemId', authenticateJWT, async (req, res) => {
   try {
     const { itemType, size } = req.query;
-    const userId = req.params.userId;
+    const userId = req.user.userId; // Use authenticated user's ID
     const itemId = req.params.itemId;
 
     const cart = await Cart.findOne({ userId });
@@ -1187,13 +1188,13 @@ app.delete('/api/cart/:userId/items/:itemId', authenticateJWT, async (req, res) 
   }
 });
 
-// Clear cart
-app.delete('/api/cart/:userId', authenticateJWT, async (req, res) => {
+// Clear cart - use authenticated user's ID from JWT
+app.delete('/api/cart', authenticateJWT, async (req, res) => {
   try {
     const result = await Cart.findOneAndUpdate(
-      { userId: req.params.userId },
+      { userId: req.user.userId },
       { $set: { items: [] } },
-      { new: true }
+      { new: true, upsert: true }
     );
     
     if (!result) {
