@@ -1052,123 +1052,94 @@ app.get('/api/cart/:userId', async (req, res) => {
   }
 });
 
-app.patch('/api/cart/:userId/items', cors(), authenticateJWT, async (req, res) => {
-    try {
-        const { menuItemId, quantity, itemType, selectedSize } = req.body;
-        const userId = req.params.userId;
-        
-        // Validate input
-        if (!mongoose.Types.ObjectId.isValid(menuItemId)) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Invalid menuItemId' 
-            });
-        }
-
-        let cart = await Cart.findOne({ userId });
-        if (!cart) {
-            cart = new Cart({ userId, items: [] });
-        }
-
-        // Find existing item
-        const existingItemIndex = cart.items.findIndex(item => 
-            item.menuItem.toString() === menuItemId && 
-            item.itemType === itemType &&
-            (
-                (selectedSize && item.selectedSize && 
-                 item.selectedSize.size === selectedSize.size) ||
-                (!selectedSize && !item.selectedSize)
-            )
-        );
-
-        if (existingItemIndex >= 0) {
-            if (quantity <= 0) {
-                cart.items.splice(existingItemIndex, 1);
-            } else {
-                cart.items[existingItemIndex].quantity = quantity;
-                if (selectedSize) {
-                    cart.items[existingItemIndex].selectedSize = selectedSize;
-                }
-            }
-        } else if (quantity > 0) {
-            cart.items.push({ 
-                menuItem: menuItemId, 
-                quantity, 
-                itemType,
-                selectedSize: selectedSize || undefined
-            });
-        }
-
-        await cart.save();
-        
-        // Populate the response
-        const populatedCart = await Cart.findById(cart._id)
-            .populate({
-                path: 'items.menuItem',
-                select: 'name price image priceOptions category'
-            });
-            
-        res.json({ success: true, cart: populatedCart });
-    } catch (err) {
-        console.error('Cart update error:', err);
-        res.status(500).json({ 
-            success: false, 
-            error: 'Failed to update cart item' 
-        });
+app.patch('/api/cart/:userId/items', authenticateJWT, async (req, res) => {
+  try {
+    const { menuItemId, quantity, itemType, selectedSize } = req.body;
+    
+    // Validate input
+    if (!mongoose.Types.ObjectId.isValid(menuItemId)) {
+      return res.status(400).json({ error: 'Invalid menuItemId' });
     }
+
+    let cart = await Cart.findOne({ userId: req.params.userId }) || 
+               new Cart({ userId: req.params.userId, items: [] });
+
+    // Find existing item with EXACT same properties
+    const existingItemIndex = cart.items.findIndex(item => 
+      item.menuItem.toString() === menuItemId &&
+      item.itemType === itemType &&
+      (
+        (selectedSize && item.selectedSize?.size === selectedSize.size) ||
+        (!selectedSize && !item.selectedSize)
+      )
+    );
+
+    if (existingItemIndex >= 0) {
+      // Update existing item
+      cart.items[existingItemIndex].quantity = quantity;
+      if (selectedSize) {
+        cart.items[existingItemIndex].selectedSize = selectedSize;
+      }
+    } else {
+      // Add new item only if quantity > 0
+      if (quantity > 0) {
+        cart.items.push({
+          menuItem: menuItemId,
+          quantity,
+          itemType,
+          selectedSize: selectedSize || undefined
+        });
+      }
+    }
+
+    await cart.save();
+    
+    // Populate the response
+    const populatedCart = await Cart.findById(cart._id)
+      .populate({
+        path: 'items.menuItem',
+        select: 'name price image priceOptions category'
+      });
+      
+    res.json(populatedCart);
+  } catch (err) {
+    console.error('Cart update error:', err);
+    res.status(500).json({ error: 'Failed to update cart' });
+  }
 });
 
-app.delete('/api/cart/:userId/items/:menuItemId', authenticateJWT, async (req, res) => {
-    try {
-        const { itemType, size } = req.query;
-        const userId = req.params.userId;
-        const menuItemId = req.params.menuItemId;
-        
-        let cart = await Cart.findOne({ userId });
-        if (!cart) {
-            return res.status(404).json({ 
-                success: false, 
-                error: 'Cart not found' 
-            });
-        }
+app.delete('/api/cart/:userId/items/:itemId', authenticateJWT, async (req, res) => {
+  try {
+    const { itemType, size } = req.query;
+    const userId = req.params.userId;
+    const itemId = req.params.itemId;
 
-        const initialLength = cart.items.length;
-        
-        cart.items = cart.items.filter(item => 
-            !(
-                item.menuItem.toString() === menuItemId && 
-                item.itemType === itemType &&
-                (
-                    (size && item.selectedSize && 
-                     item.selectedSize.size === size) ||
-                    (!size && !item.selectedSize)
-                )
-            )
-        );
+    const cart = await Cart.findOne({ userId });
+    if (!cart) return res.status(404).json({ error: 'Cart not found' });
 
-        if (cart.items.length === initialLength) {
-            return res.status(404).json({ 
-                success: false, 
-                error: 'Item not found in cart' 
-            });
-        }
+    const initialLength = cart.items.length;
+    
+    cart.items = cart.items.filter(item => 
+      !(
+        item.menuItem.toString() === itemId &&
+        item.itemType === itemType &&
+        (
+          (size && item.selectedSize?.size === size) ||
+          (!size && !item.selectedSize)
+        )
+      )
+    );
 
-        await cart.save();
-        
-        const populatedCart = await Cart.findById(cart._id)
-            .populate({
-                path: 'items.menuItem',
-                select: 'name price image priceOptions category'
-            });
-            
-        res.json({ success: true, cart: populatedCart });
-    } catch (err) {
-        console.error('Cart item removal error:', err);
-        res.status(500).json({ 
-            success: false, 
-            error: 'Failed to remove item from cart' 
-        });
+    if (cart.items.length === initialLength) {
+      return res.status(404).json({ error: 'Item not found in cart' });
     }
+
+    await cart.save();
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Cart item removal error:', err);
+    res.status(500).json({ error: 'Failed to remove item' });
+  }
 });
 
 // Add or update a single item in the user's cart
