@@ -6,7 +6,7 @@ const app = express();
 app.use(cors({
   origin: true, // Allow all origins
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
@@ -1020,7 +1020,7 @@ app.get('/api/cart/:userId', async (req, res) => {
   }
 });
 
-app.patch('/api/cart/:userId/items', authenticateJWT, async (req, res) => {
+app.patch('/api/cart/:userId/items', cors(), authenticateJWT, async (req, res) => {
     try {
         const { menuItemId, quantity, itemType, selectedSize } = req.body;
         const userId = req.params.userId;
