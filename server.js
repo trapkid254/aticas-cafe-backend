@@ -1156,38 +1156,43 @@ app.patch('/api/cart/items', authenticateJWT, async (req, res) => {
 // Remove item from cart - use authenticated user's ID from JWT
 app.delete('/api/cart/items/:itemId', authenticateJWT, async (req, res) => {
   try {
-    const { itemType, size } = req.query;
-    const userId = req.user.userId; // Use authenticated user's ID
-    const itemId = req.params.itemId;
+    const { itemType } = req.query;
+    const { itemId } = req.params;
+    const userId = req.user.userId;
 
+    // Validate input
+    if (!mongoose.Types.ObjectId.isValid(itemId)) {
+      return res.status(400).json({ error: 'Invalid item ID' });
+    }
+    if (!['Menu', 'MealOfDay'].includes(itemType)) {
+      return res.status(400).json({ error: 'Invalid item type' });
+    }
+
+    // Find the user's cart
     const cart = await Cart.findOne({ userId });
-    if (!cart) return res.status(404).json({ error: 'Cart not found' });
+    if (!cart) {
+      return res.status(404).json({ error: 'Cart not found' });
+    }
 
-    const initialLength = cart.items.length;
-    
+    // Remove the item
+    const initialItemCount = cart.items.length;
     cart.items = cart.items.filter(item => 
-      !(
-        item.menuItem.toString() === itemId &&
-        item.itemType === itemType &&
-        (
-          (size && item.selectedSize?.size === size) ||
-          (!size && !item.selectedSize)
-        )
-      )
+      !(item.menuItem.toString() === itemId && 
+        item.itemType === itemType)
     );
 
-    if (cart.items.length === initialLength) {
+    // Check if item was actually removed
+    if (cart.items.length === initialItemCount) {
       return res.status(404).json({ error: 'Item not found in cart' });
     }
 
     await cart.save();
     res.json({ success: true });
   } catch (err) {
-    console.error('Cart item removal error:', err);
-    res.status(500).json({ error: 'Failed to remove item' });
+    console.error('Error removing cart item:', err);
+    res.status(500).json({ error: 'Failed to remove item from cart' });
   }
 });
-
 // Clear cart - use authenticated user's ID from JWT
 app.delete('/api/cart', authenticateJWT, async (req, res) => {
   try {
