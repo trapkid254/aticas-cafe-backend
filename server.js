@@ -1063,8 +1063,14 @@ app.get('/api/cart/:userId', async (req, res) => {
 
 // Update cart item - use authenticated user's ID from JWT
 app.patch('/api/cart/items', authenticateJWT, async (req, res) => {
+  console.log('--- PATCH /api/cart/items ---');
+  console.log('Request body:', JSON.stringify(req.body, null, 2));
+
   try {
     const { menuItemId, quantity, itemType, selectedSize } = req.body;
+
+    const menuItemIdStr = String(menuItemId);
+    console.log(`Looking for item: ${menuItemIdStr}, type: ${itemType}, size: ${selectedSize?.size}`);
     
     // Validate input
     if (!mongoose.Types.ObjectId.isValid(menuItemId)) {
@@ -1094,37 +1100,52 @@ app.patch('/api/cart/items', authenticateJWT, async (req, res) => {
     }
 
     // Find existing item index
-    const existingItemIndex = cart.items.findIndex(item => 
-      String(item.menuItem) === String(menuItemId) &&
-      item.itemType === itemType &&
-      (
-        (normalizedSize && item.selectedSize && 
-         item.selectedSize.size === normalizedSize.size) ||
-        (!normalizedSize && !item.selectedSize)
-      )
-    );
+    const existingItemIndex = cart.items.findIndex(item =>
+      const match = 
+      String(item.menuItem) === menuItemIdStr &&
+      item.itemType === itemType;
+      console.log(`Found match: ${match}`);
+      
+        const sizeMatch = 
+        (!selectedSize && !item.selectedSize) ||
+        (selectedSize?.size && item.selectedSize?.size && 
+         selectedSize.size === item.selectedSize.size);
+      
+      console.log(`Checking item ${String(item.menuItem)}:`, {
+        typeMatch: item.itemType === itemType,
+        sizeMatch,
+        currentSize: item.selectedSize?.size,
+        requestedSize: selectedSize?.size
+      });
+      
+      return match && sizeMatch;
+    });
 
     if (existingItemIndex >= 0) {
-      // Update existing item
+      console.log(`Found existing item at index ${existingItemIndex}, current quantity: ${cart.items[existingItemIndex].quantity}`);
+      
       if (quantity <= 0) {
-        // Remove if quantity is 0 or less
+        console.log(`Removing item (quantity ${quantity})`);
         cart.items.splice(existingItemIndex, 1);
       } else {
-        // Update quantity
+        console.log(`Updating quantity from ${cart.items[existingItemIndex].quantity} to ${quantity}`);
         cart.items[existingItemIndex].quantity = quantity;
-        // Update size if provided
-        if (normalizedSize) {
-          cart.items[existingItemIndex].selectedSize = normalizedSize;
+        
+        // Update size if changed
+        if (selectedSize && !deepEqual(cart.items[existingItemIndex].selectedSize, selectedSize)) {
+          console.log(`Updating size from ${JSON.stringify(cart.items[existingItemIndex].selectedSize)} to ${JSON.stringify(selectedSize)}`);
+          cart.items[existingItemIndex].selectedSize = selectedSize;
         }
       }
     } else if (quantity > 0) {
-      // Add new item only if quantity is positive
-      const newItem = {
+      console.log(`Adding new item with quantity ${quantity}`);
+      cart.items.push({
         menuItem: menuItemId,
         quantity,
         itemType,
-        selectedSize: normalizedSize || undefined
-      };
+        selectedSize: selectedSize || undefined
+      });
+    }
       cart.items.push(newItem);
     }
 
