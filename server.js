@@ -1144,8 +1144,6 @@ app.patch('/api/cart/items', authenticateJWT, async (req, res) => {
         selectedSize: selectedSize || undefined
       });
     }
-      cart.items.push(newItem);
-    }
 
     // Save the cart
     await cart.save();
