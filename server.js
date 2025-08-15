@@ -1100,13 +1100,11 @@ app.patch('/api/cart/items', authenticateJWT, async (req, res) => {
     }
 
     // Find existing item index
-    const existingItemIndex = cart.items.findIndex(item =>
-      const match = 
-      String(item.menuItem) === menuItemIdStr &&
-      item.itemType === itemType;
+    const existingItemIndex = cart.items.findIndex(item => {
+      const match = String(item.menuItem) === menuItemIdStr && item.itemType === itemType;
       console.log(`Found match: ${match}`);
       
-        const sizeMatch = 
+      const sizeMatch = 
         (!selectedSize && !item.selectedSize) ||
         (selectedSize?.size && item.selectedSize?.size && 
          selectedSize.size === item.selectedSize.size);
