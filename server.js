@@ -1070,76 +1070,68 @@ app.patch('/api/cart/items', authenticateJWT, async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(menuItemId)) {
       return res.status(400).json({ error: 'Invalid menuItemId' });
     }
+    if (typeof quantity !== 'number' || quantity < 0) {
+      return res.status(400).json({ error: 'Invalid quantity' });
+    }
+    if (!['Menu', 'MealOfDay'].includes(itemType)) {
+      return res.status(400).json({ error: 'Invalid itemType' });
+    }
 
     // Use the authenticated user's ID from JWT
     const userId = req.user.userId;
+    
+    // Find or create cart
     let cart = await Cart.findOne({ userId }) || 
                new Cart({ userId, items: [] });
 
-    // Normalize selectedSize format
+    // Normalize selectedSize
     let normalizedSize = null;
     if (selectedSize) {
-      if (typeof selectedSize === 'string') {
-        // If size comes as string, try to find matching price
-        let menuItem;
-        if (itemType === 'Menu') {
-          menuItem = await Menu.findById(menuItemId);
-        } else if (itemType === 'MealOfDay') {
-          menuItem = await MealOfDay.findById(menuItemId);
-        }
-        
-        if (menuItem && menuItem.priceOptions) {
-          const sizeOption = menuItem.priceOptions.find(opt => opt.size === selectedSize);
-          if (sizeOption) {
-            normalizedSize = {
-              size: selectedSize,
-              price: sizeOption.price
-            };
-          } else {
-            normalizedSize = { size: selectedSize };
-          }
-        } else {
-          normalizedSize = { size: selectedSize };
-        }
-      } else if (selectedSize.size) {
-        // If it's already an object with size property
-        normalizedSize = selectedSize;
-      }
+      normalizedSize = {
+        size: selectedSize.size || selectedSize,
+        price: selectedSize.price || null
+      };
     }
 
-    // Find existing item with EXACT same properties
+    // Find existing item index
     const existingItemIndex = cart.items.findIndex(item => 
-      item.menuItem.toString() === menuItemId &&
+      String(item.menuItem) === String(menuItemId) &&
       item.itemType === itemType &&
       (
-        (normalizedSize && item.selectedSize?.size === normalizedSize.size) ||
+        (normalizedSize && item.selectedSize && 
+         item.selectedSize.size === normalizedSize.size) ||
         (!normalizedSize && !item.selectedSize)
       )
     );
 
     if (existingItemIndex >= 0) {
       // Update existing item
-      if (quantity < 1) {
+      if (quantity <= 0) {
+        // Remove if quantity is 0 or less
         cart.items.splice(existingItemIndex, 1);
       } else {
+        // Update quantity
         cart.items[existingItemIndex].quantity = quantity;
+        // Update size if provided
         if (normalizedSize) {
           cart.items[existingItemIndex].selectedSize = normalizedSize;
         }
       }
     } else if (quantity > 0) {
-      // Add new item
-      cart.items.push({
+      // Add new item only if quantity is positive
+      const newItem = {
         menuItem: menuItemId,
         quantity,
         itemType,
         selectedSize: normalizedSize || undefined
-      });
+      };
+      cart.items.push(newItem);
     }
 
+    // Save the cart
     await cart.save();
     
-    // Populate the response
+    // Populate the menu items for response
     const populatedCart = await Cart.findById(cart._id)
       .populate({
         path: 'items.menuItem',
