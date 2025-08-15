@@ -1090,34 +1090,15 @@ app.patch('/api/cart/items', authenticateJWT, async (req, res) => {
     let cart = await Cart.findOne({ userId }) || 
                new Cart({ userId, items: [] });
 
-    // Normalize selectedSize
-    let normalizedSize = null;
-    if (selectedSize) {
-      normalizedSize = {
-        size: selectedSize.size || selectedSize,
-        price: selectedSize.price || null
-      };
-    }
-
-    // Find existing item index
-    const existingItemIndex = cart.items.findIndex(item => {
-      const match = String(item.menuItem) === menuItemIdStr && item.itemType === itemType;
-      console.log(`Found match: ${match}`);
-      
-      const sizeMatch = 
+    // Find existing item index - simplified matching logic
+    const existingItemIndex = cart.items.findIndex(item => 
+      String(item.menuItem) === menuItemIdStr && 
+      item.itemType === itemType &&
+      (
         (!selectedSize && !item.selectedSize) ||
-        (selectedSize?.size && item.selectedSize?.size && 
-         selectedSize.size === item.selectedSize.size);
-      
-      console.log(`Checking item ${String(item.menuItem)}:`, {
-        typeMatch: item.itemType === itemType,
-        sizeMatch,
-        currentSize: item.selectedSize?.size,
-        requestedSize: selectedSize?.size
-      });
-      
-      return match && sizeMatch;
-    });
+        (selectedSize?.size === item.selectedSize?.size)
+      )
+    );
 
     if (existingItemIndex >= 0) {
       console.log(`Found existing item at index ${existingItemIndex}, current quantity: ${cart.items[existingItemIndex].quantity}`);
@@ -1130,7 +1111,7 @@ app.patch('/api/cart/items', authenticateJWT, async (req, res) => {
         cart.items[existingItemIndex].quantity = quantity;
         
         // Update size if changed
-        if (selectedSize && !deepEqual(cart.items[existingItemIndex].selectedSize, selectedSize)) {
+        if (selectedSize && JSON.stringify(cart.items[existingItemIndex].selectedSize) !== JSON.stringify(selectedSize)) {
           console.log(`Updating size from ${JSON.stringify(cart.items[existingItemIndex].selectedSize)} to ${JSON.stringify(selectedSize)}`);
           cart.items[existingItemIndex].selectedSize = selectedSize;
         }
@@ -1202,6 +1183,7 @@ app.delete('/api/cart/items/:itemId', authenticateJWT, async (req, res) => {
     res.status(500).json({ error: 'Failed to remove item from cart' });
   }
 });
+
 // Clear cart - use authenticated user's ID from JWT
 app.delete('/api/cart', authenticateJWT, async (req, res) => {
   try {
