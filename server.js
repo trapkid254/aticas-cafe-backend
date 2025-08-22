@@ -316,42 +316,46 @@ app.get('/butchery-admin/reports', (req, res) => {
 
 // JWT Auth Middleware
 function authenticateJWT(req, res, next) {
-  const authHeader = req.headers['authorization'];
+  const authHeader = req.headers['authorization'] || req.headers['Authorization'];
   
   // 1. Enhanced error logging (for debugging)
   if (!authHeader) {
-    console.log('[Auth] No authorization header received');
-    console.log('Received headers:', req.headers);
-    return res.status(401).json({ error: 'No token provided' });
+    console.error('No authorization header found');
+    return res.status(401).json({ success: false, error: 'No token provided' });
   }
 
-  // 2. Handle "Bearer" prefix (backward compatible)
-  const token = authHeader.startsWith('Bearer ') 
-    ? authHeader.split(' ')[1] 
-    : authHeader;
+  // 2. Check for Bearer token format
+  const parts = authHeader.split(' ');
+  if (parts.length !== 2 || parts[0].toLowerCase() !== 'bearer') {
+    console.error('Invalid token format');
+    return res.status(401).json({ success: false, error: 'Invalid token format' });
+  }
 
-  // 3. Verify with detailed error logging
+  const token = parts[1];
+  
+  if (!token) {
+    return res.status(401).json({ success: false, error: 'No token provided' });
+  }
+  
+  // 3. Verify the token
   jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
     if (err) {
-      console.error('[Auth] JWT Verification Failed:', {
-        error: err.message,
-        token: token.slice(0, 10) + '...', // Log first 10 chars for debugging
-        expiredAt: err.name === 'TokenExpiredError' ? err.expiredAt : null
-      });
-      return res.status(401).json({ 
-        error: 'Invalid token',
-        // Only expose safe error details to client
-        details: err.name === 'TokenExpiredError' ? 'Token expired' : 'Invalid token'
-      });
+      console.error('Token verification failed:', err.message);
+      // If token is expired, provide a more specific error message
+      if (err.name === 'TokenExpiredError') {
+        return res.status(401).json({ success: false, error: 'Token expired' });
+      }
+      return res.status(403).json({ success: false, error: 'Invalid token' });
     }
-
+    
     // 4. Log successful authentication (debug only)
     console.log(`[Auth] Valid token for user:`, {
       userId: decoded.userId, 
       issuedAt: new Date(decoded.iat * 1000),
       expiresAt: new Date(decoded.exp * 1000)
     });
-
+    
+    // 5. Attach user to request object
     req.user = decoded;
     next();
   });
