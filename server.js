@@ -53,7 +53,6 @@ app.options('*', cors());
 require('dotenv').config();
 const bodyParser = require('body-parser');
 const fetch = require('node-fetch');
-const path = require('path');
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
