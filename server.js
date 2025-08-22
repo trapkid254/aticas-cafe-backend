@@ -26,23 +26,72 @@ const PORT = process.env.PORT || 3000;
 
 // MongoDB Atlas connection
 const MONGODB_URI = process.env.MONGODB_URI;
-mongoose.connect(MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB Atlas'))
-  .catch(err => console.error('MongoDB connection error:', err));
+
+// Connect to MongoDB
+const connectDB = async () => {
+  try {
+    await mongoose.connect(MONGODB_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true
+    });
+    console.log('Connected to MongoDB Atlas');
+  } catch (err) {
+    console.error('MongoDB connection error:', err);
+    process.exit(1);
+  }
+};
+
+// Initialize database connection
+connectDB();
+
+// Handle MongoDB connection events
+mongoose.connection.on('error', err => {
+  console.error('MongoDB connection error:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+  console.log('MongoDB disconnected. Reconnecting...');
+  connectDB();
+});
+
+// Start server only after MongoDB connection is established
+const startServer = async () => {
+  try {
+    // Wait for MongoDB connection
+    await new Promise(resolve => {
+      mongoose.connection.once('open', resolve);
+    });
+    
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+};
+
+startServer();
 
 // Mongoose Menu model
 const menuSchema = new mongoose.Schema({
-  name: String,
+  name: { type: String, required: true },
   description: String,
-  price: Number,
-  category: String,
+  price: { type: Number, required: true },
+  category: { type: String, required: true },
   image: String,
   quantity: { type: Number, default: 1000 },
   priceOptions: [{
     size: String,
     price: Number
   }],
-  date: { type: Date, default: Date.now }
+  date: { type: Date, default: Date.now },
+  adminType: {
+    type: String,
+    required: true,
+    enum: ['cafeteria', 'butchery'],
+    default: 'cafeteria'
+  }
 });
 const Menu = mongoose.model('Menu', menuSchema);
 
@@ -273,30 +322,51 @@ function authenticateJWT(req, res, next) {
 
 // Admin Auth Middleware
 function authenticateAdmin(req, res, next) {
-  const token = req.headers['authorization'];
+  const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No token provided' });
   jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-    if (err || (decoded.role !== 'admin' && decoded.role !== 'superadmin')) return res.status(401).json({ error: 'Unauthorized' });
-    req.admin = decoded;
+    if (err || (decoded.role !== 'admin' && decoded.role !== 'superadmin')) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    req.admin = decoded; // This now includes adminType
     next();
   });
 }
 
 // Routes
 
-// Admin login
+// Admin login - handles both butchery and cafeteria admins
 app.post('/api/admin/login',
   body('employmentNumber').notEmpty(),
   body('password').notEmpty(),
+  body('adminType').isIn(['cafeteria', 'butchery']).withMessage('Invalid admin type'),
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
-    const { employmentNumber, password } = req.body;
+    
+    const { employmentNumber, password, adminType } = req.body;
+    
     try {
-      const admin = await Admin.findOne({ employmentNumber });
+      // Find admin with both employmentNumber and adminType
+      const admin = await Admin.findOne({ employmentNumber, adminType });
+      
       if (admin && await bcrypt.compare(password, admin.password)) {
-        const token = jwt.sign({ employmentNumber: admin.employmentNumber, role: admin.role }, process.env.JWT_SECRET, { expiresIn: '1d' });
-        res.json({ success: true, token, admin: { employmentNumber: admin.employmentNumber, name: admin.name, role: admin.role } });
+        const token = jwt.sign({ 
+          employmentNumber: admin.employmentNumber, 
+          role: admin.role,
+          adminType: admin.adminType
+        }, process.env.JWT_SECRET, { expiresIn: '1d' });
+        
+        res.json({ 
+          success: true, 
+          token, 
+          admin: { 
+            employmentNumber: admin.employmentNumber, 
+            name: admin.name, 
+            role: admin.role,
+            adminType: admin.adminType
+          } 
+        });
       } else {
         res.status(401).json({ success: false, error: 'Invalid credentials' });
       }
@@ -414,32 +484,66 @@ app.delete('/api/employees/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Get all orders (protected)
+// Get all orders (protected) with admin type filtering
 app.get('/api/orders', authenticateAdmin, async (req, res) => {
   try {
-    const orders = await Order.find().populate('items.menuItem');
+    const adminType = req.admin?.adminType || 'cafeteria';
+    
+    // Get all menu items for this admin type to filter orders
+    const menuItems = await Menu.find({ adminType }).select('_id');
+    const menuItemIds = menuItems.map(item => item._id);
+    
+    // Find orders that have at least one item from this admin's menu
+    const orders = await Order.find({
+      $or: [
+        { 'items.menuItem': { $in: menuItemIds } },
+        { 'items.adminType': adminType } // For backward compatibility
+      ]
+    }).populate('items.menuItem').sort({ date: -1 });
+    
     res.json(orders);
   } catch (err) {
+    console.error('Error fetching orders:', err);
     res.status(500).json({ error: 'Failed to fetch orders' });
   }
 });
 
-// GET a single order by ID
-app.get('/api/orders/:id', async (req, res) => {
+// GET a single order by ID with admin type check
+app.get('/api/orders/:id', authenticateAdmin, async (req, res) => {
   try {
+    const adminType = req.admin?.adminType || 'cafeteria';
     const order = await Order.findById(req.params.id).populate('items.menuItem');
+    
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    
+    // Verify admin has access to this order
+    const hasAccess = order.items.some(item => {
+      const itemAdminType = item.adminType || 
+                         (item.menuItem && item.menuItem.adminType) || 
+                         'cafeteria';
+      return itemAdminType === adminType;
+    });
+    
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Unauthorized to access this order' });
+    }
+    
     console.log('Fetched order:', JSON.stringify(order, null, 2));
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
     res.json(order);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch order' });
-  }
-});
+      res.status(500).json({ error: 'Failed to fetch order' });
+    }
+  });
 
 // Add new order
 app.post('/api/orders', async (req, res) => {
+  // For new orders, we'll add adminType to each item
+  // This helps with filtering orders by admin type
   try {
     let userId = null;
     let customerName = req.body.customerName;
@@ -525,19 +629,33 @@ app.post('/api/orders', async (req, res) => {
     const deliveryFee = req.body.deliveryFee || 0;
     const total = subtotal + deliveryFee;
     
+    // Add adminType to each item in the order
+    const itemsWithAdminType = await Promise.all(req.body.items.map(async (item) => {
+      if (item.itemType === 'Menu') {
+        const menuItem = await Menu.findById(item.menuItem);
+        return {
+          ...item,
+          adminType: menuItem?.adminType || 'cafeteria'
+        };
+      }
+      return {
+        ...item,
+        adminType: 'cafeteria' // Default for MealOfDay items
+      };
+    }));
+
     // Prepare order data
     const orderData = {
-      ...req.body,
-      items: req.body.items.map(item => ({
-        ...item,
-        // Ensure selectedSize is properly included
-        selectedSize: item.selectedSize || undefined
-      })),
+      items: itemsWithAdminType,
+      customerName,
+      customerPhone,
+      deliveryLocation: req.body.deliveryLocation,
+      deliveryInstructions: req.body.deliveryInstructions,
+      paymentMethod: req.body.paymentMethod,
+      status: 'pending',
       total,
       deliveryFee,
       userId,
-      customerName,
-      customerPhone,
       viewedByAdmin: false
     };
     
@@ -589,8 +707,24 @@ app.post('/api/orders', async (req, res) => {
 // Update order status (protected)
 app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
   try {
+    const adminType = req.admin?.adminType || 'cafeteria';
     const { status } = req.body;
+    
+    // First get the order to verify admin access
     const order = await Order.findById(req.params.id);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    
+    // Verify admin has access to this order
+    const hasAccess = order.items.some(item => {
+      const itemAdminType = item.adminType || 'cafeteria';
+      return itemAdminType === adminType;
+    });
+    
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Unauthorized to update this order' });
+    }
     
     if (!order) {
       return res.status(404).json({ success: false, error: 'Order not found' });
@@ -665,12 +799,14 @@ app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Get all menu items
-app.get('/api/menu', async (req, res) => {
+// Get all menu items with admin type filtering
+app.get('/api/menu', authenticateAdmin, async (req, res) => {
   try {
-    const menuItems = await Menu.find();
+    const adminType = req.admin?.adminType || 'cafeteria'; // Default to cafeteria if not specified
+    const menuItems = await Menu.find({ adminType });
     res.json(menuItems);
   } catch (err) {
+    console.error('Error fetching menu items:', err);
     res.status(500).json({ error: 'Failed to fetch menu items' });
   }
 });
@@ -690,27 +826,16 @@ app.get('/api/menu/:id', async (req, res) => {
 });
 
 // Add new menu item (protected)
-app.post('/api/menu', authenticateAdmin, async (req, res) => {
+app.post('/api/menu', authenticateAdmin, upload.single('image'), async (req, res) => {
   try {
-    // Validate priceOptions if provided
-    if (req.body.priceOptions) {
-      for (const option of req.body.priceOptions) {
-        if (!option.size || !option.price) {
-          return res.status(400).json({
-            success: false,
-            error: 'Each price option must have both size and price'
-          });
-        }
-        if (typeof option.price !== 'number' || option.price <= 0) {
-          return res.status(400).json({
-            success: false,
-            error: 'Price must be a positive number'
-          });
-        }
-      }
-    }
+    // Ensure the admin type is set correctly
+    const adminType = req.admin?.adminType || 'cafeteria';
+    const menuData = {
+      ...req.body,
+      adminType
+    };
     
-    const newItem = new Menu(req.body);
+    const newItem = new Menu(menuData);
     await newItem.save();
     res.json({ success: true, item: newItem });
   } catch (err) {
@@ -721,26 +846,35 @@ app.post('/api/menu', authenticateAdmin, async (req, res) => {
 // Update menu item (protected)
 app.put('/api/menu/:id', authenticateAdmin, async (req, res) => {
   try {
+    // First, get the current item to verify admin type
+    const existingItem = await Menu.findById(req.params.id);
+    if (!existingItem) {
+      return res.status(404).json({ error: 'Menu item not found' });
+    }
+    
+    // Verify admin has permission to modify this item
+    if (existingItem.adminType !== req.admin?.adminType) {
+      return res.status(403).json({ error: 'Unauthorized to modify this menu item' });
+    }
+
     // Validate priceOptions if provided
     if (req.body.priceOptions) {
       for (const option of req.body.priceOptions) {
         if (!option.size || !option.price) {
-          return res.status(400).json({
-            success: false,
-            error: 'Each price option must have both size and price'
-          });
-        }
-        if (typeof option.price !== 'number' || option.price <= 0) {
-          return res.status(400).json({
-            success: false,
-            error: 'Price must be a positive number'
-          });
+          return res.status(400).json({ error: 'Each price option must have both size and price' });
         }
       }
     }
-    
+
     const updateData = { ...req.body };
-    if (Object.prototype.hasOwnProperty.call(updateData, 'image') && (!updateData.image || updateData.image === '')) {
+    
+    // Ensure adminType cannot be changed
+    delete updateData.adminType;
+    
+    // Handle image update if provided
+    if (req.body.image) {
+      updateData.image = req.body.image;
+    } else {
       delete updateData.image;
     }
     
@@ -748,7 +882,7 @@ app.put('/api/menu/:id', authenticateAdmin, async (req, res) => {
     if (updatedItem) {
       res.json({ success: true, item: updatedItem });
     } else {
-      res.status(404).json({ success: false, error: 'Item not found' });
+      res.status(404).json({ error: 'Menu item not found' });
     }
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to update menu item' });
@@ -758,15 +892,82 @@ app.put('/api/menu/:id', authenticateAdmin, async (req, res) => {
 // Delete menu item (protected)
 app.delete('/api/menu/:id', authenticateAdmin, async (req, res) => {
   try {
+    // First, get the current item to verify admin type
+    const existingItem = await Menu.findById(req.params.id);
+    if (!existingItem) {
+      return res.status(404).json({ error: 'Menu item not found' });
+    }
+    
+    // Verify admin has permission to delete this item
+    if (existingItem.adminType !== req.admin?.adminType) {
+      return res.status(403).json({ error: 'Unauthorized to delete this menu item' });
+    }
+    
     const deletedItem = await Menu.findByIdAndDelete(req.params.id);
     if (deletedItem) {
       res.json({ success: true });
     } else {
-      res.status(404).json({ success: false, error: 'Item not found' });
+      res.status(404).json({ error: 'Menu item not found' });
     }
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to delete menu item' });
   }
+});
+
+// Dashboard statistics endpoint with admin type filtering
+app.get('/api/dashboard/stats', authenticateAdmin, async (req, res) => {
+    try {
+        const adminType = req.admin?.adminType || 'cafeteria';
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        // Get menu items for this admin type
+        const menuItems = await Menu.find({ adminType }).select('_id');
+        const menuItemIds = menuItems.map(item => item._id);
+        
+        // Find orders with items from this admin's menu
+        const orders = await Order.find({
+            $or: [
+                { 'items.menuItem': { $in: menuItemIds } },
+                { 'items.adminType': adminType }
+            ]
+        });
+        
+        // Filter today's orders
+        const todayOrders = orders.filter(order => {
+            const orderDate = new Date(order.createdAt || order.date);
+            return orderDate >= today;
+        });
+        
+        // Calculate stats
+        const stats = {
+            todayOrders: todayOrders.length,
+            todayRevenue: todayOrders.reduce((sum, order) => sum + (order.totalAmount || 0), 0),
+            pendingOrders: orders.filter(o => o.status === 'pending').length,
+            completedOrders: orders.filter(o => o.status === 'completed').length
+        };
+        
+        // Get recent orders (last 5)
+        const recentOrders = await Order.find({
+            $or: [
+                { 'items.menuItem': { $in: menuItemIds } },
+                { 'items.adminType': adminType }
+            ]
+        })
+        .sort({ createdAt: -1, date: -1 })
+        .limit(5)
+        .populate('items.menuItem');
+        
+        res.json({
+            success: true,
+            stats,
+            recentOrders
+        });
+        
+    } catch (err) {
+        console.error('Dashboard stats error:', err);
+        res.status(500).json({ success: false, error: 'Failed to fetch dashboard stats' });
+    }
 });
 
 // M-Pesa Daraja Sandbox Credentials
@@ -905,12 +1106,14 @@ app.post('/api/mpesa/callback', async (req, res) => {
     }
 });
 
-// Get all meals of the day
-app.get('/api/meals', async (req, res) => {
+// Get all meals of the day with admin type filtering
+app.get('/api/meals', authenticateAdmin, async (req, res) => {
   try {
-    const meals = await MealOfDay.find();
+    const adminType = req.admin?.adminType || 'cafeteria';
+    const meals = await MealOfDay.find({ adminType });
     res.json(meals);
   } catch (err) {
+    console.error('Error fetching meals of the day:', err);
     res.status(500).json({ error: 'Failed to fetch meals of the day' });
   }
 });
@@ -919,10 +1122,19 @@ app.get('/api/meals', async (req, res) => {
 app.post('/api/meals', authenticateAdmin, async (req, res) => {
   try {
     const { name, price, image, quantity } = req.body;
+    const adminType = req.admin?.adminType || 'cafeteria';
+    
+    const mealData = {
+      name,
+      price,
+      image,
+      quantity: quantity || 0,
+      adminType
+    };
     if (!name || !price || !image) {
       return res.status(400).json({ success: false, error: 'Name, price, and image are required.' });
     }
-    const newMeal = new MealOfDay({ name, price, image, quantity });
+    const newMeal = new MealOfDay(mealData);
     await newMeal.save();
     res.json({ success: true, meal: newMeal });
   } catch (err) {
@@ -933,7 +1145,22 @@ app.post('/api/meals', authenticateAdmin, async (req, res) => {
 // Update meal of the day (protected)
 app.put('/api/meals/:id', authenticateAdmin, async (req, res) => {
   try {
-    const updatedMeal = await MealOfDay.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    // First, get the current item to verify admin type
+    const existingMeal = await MealOfDay.findById(req.params.id);
+    if (!existingMeal) {
+      return res.status(404).json({ error: 'Meal not found' });
+    }
+    
+    // Verify admin has permission to modify this item
+    if (existingMeal.adminType !== req.admin?.adminType) {
+      return res.status(403).json({ error: 'Unauthorized to modify this meal' });
+    }
+    
+    // Don't allow changing adminType through update
+    const updateData = { ...req.body };
+    delete updateData.adminType;
+    
+    const updatedMeal = await MealOfDay.findByIdAndUpdate(req.params.id, updateData, { new: true });
     if (updatedMeal) {
       res.json({ success: true, meal: updatedMeal });
     } else {
@@ -947,6 +1174,17 @@ app.put('/api/meals/:id', authenticateAdmin, async (req, res) => {
 // Delete meal of the day (protected)
 app.delete('/api/meals/:id', authenticateAdmin, async (req, res) => {
   try {
+    // First, get the current item to verify admin type
+    const existingMeal = await MealOfDay.findById(req.params.id);
+    if (!existingMeal) {
+      return res.status(404).json({ error: 'Meal not found' });
+    }
+    
+    // Verify admin has permission to delete this item
+    if (existingMeal.adminType !== req.admin?.adminType) {
+      return res.status(403).json({ error: 'Unauthorized to delete this meal' });
+    }
+    
     const deletedMeal = await MealOfDay.findByIdAndDelete(req.params.id);
     if (deletedMeal) {
       res.json({ success: true });
@@ -1247,14 +1485,13 @@ app.get('/api/bookings', async (req, res) => {
   }
 });
 
-// Start server
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+// Server startup is now handled by startServer() after MongoDB connection
 
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection:', reason);
 });
 process.on('uncaughtException', (err) => {
     console.error('Uncaught Exception:', err);
+    // Exit with failure
+    process.exit(1);
 });
