@@ -1147,11 +1147,11 @@ app.post('/api/mpesa/callback', async (req, res) => {
     }
 });
 
-// Get all meals of the day with admin type filtering
-app.get('/api/meals', authenticateAdmin, async (req, res) => {
+// Get all meals of the day (public endpoint)
+app.get('/api/meals', async (req, res) => {
   try {
-    const adminType = req.admin?.adminType || 'cafeteria';
-    const meals = await MealOfDay.find({ adminType });
+    // Get meals for both admin types by default
+    const meals = await MealOfDay.find({});
     res.json(meals);
   } catch (err) {
     console.error('Error fetching meals of the day:', err);
