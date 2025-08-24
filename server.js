@@ -840,11 +840,11 @@ app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Get all menu items with admin type filtering
-app.get('/api/menu', authenticateAdmin, async (req, res) => {
+// Get all menu items (public endpoint)
+app.get('/api/menu', async (req, res) => {
   try {
-    const adminType = req.admin?.adminType || 'cafeteria'; // Default to cafeteria if not specified
-    const menuItems = await Menu.find({ adminType });
+    // Get menu items for both admin types by default
+    const menuItems = await Menu.find({});
     res.json(menuItems);
   } catch (err) {
     console.error('Error fetching menu items:', err);
