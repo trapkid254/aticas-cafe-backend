@@ -136,7 +136,7 @@ const Menu = mongoose.model('Menu', menuSchema);
 const orderSchema = new mongoose.Schema({
   items: [
     {
-      itemType: { type: String, enum: ['Menu', 'MealOfDay'], required: true },
+      itemType: { type: String, enum: ['Menu', 'MealOfDay', 'Meat'], required: true },
       menuItem: { type: mongoose.Schema.Types.ObjectId, required: true, refPath: 'items.itemType' },
       quantity: Number,
       selectedSize: {
@@ -220,9 +220,9 @@ const cartSchema = new mongoose.Schema({
   },
   items: [
     {
-      itemType: { 
-        type: String, 
-        enum: ['Menu', 'MealOfDay'],
+      itemType: {
+        type: String,
+        enum: ['Menu', 'MealOfDay', 'Meat'],
         required: true
       },
       menuItem: { 
@@ -608,7 +608,7 @@ app.post('/api/orders', async (req, res) => {
     
     // Validate each item and check quantities
     for (const item of req.body.items) {
-      if (!item.itemType || !['Menu', 'MealOfDay'].includes(item.itemType)) {
+      if (!item.itemType || !['Menu', 'MealOfDay', 'Meat'].includes(item.itemType)) {
         return res.status(400).json({ success: false, error: 'Invalid itemType for one or more items.' });
       }
       
@@ -775,13 +775,13 @@ app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
     if (status === 'completed' && order.status !== 'completed') {
       for (const item of order.items) {
         const quantityToReduce = item.quantity || 1;
-        
-        if (item.itemType === 'Menu') {
+
+        if (item.itemType === 'Menu' || item.itemType === 'Meat') {
           const menuItem = await Menu.findById(item.menuItem);
           if (menuItem.quantity < quantityToReduce) {
-            return res.status(400).json({ 
-              success: false, 
-              error: `Cannot complete order: Insufficient quantity for ${menuItem.name}. Available: ${menuItem.quantity}, Required: ${quantityToReduce}` 
+            return res.status(400).json({
+              success: false,
+              error: `Cannot complete order: Insufficient quantity for ${menuItem.name}. Available: ${menuItem.quantity}, Required: ${quantityToReduce}`
             });
           }
           await Menu.findByIdAndUpdate(
@@ -792,9 +792,9 @@ app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
         } else if (item.itemType === 'MealOfDay') {
           const mealItem = await MealOfDay.findById(item.menuItem);
           if (mealItem.quantity < quantityToReduce) {
-            return res.status(400).json({ 
-              success: false, 
-              error: `Cannot complete order: Insufficient quantity for ${mealItem.name}. Available: ${mealItem.quantity}, Required: ${quantityToReduce}` 
+            return res.status(400).json({
+              success: false,
+              error: `Cannot complete order: Insufficient quantity for ${mealItem.name}. Available: ${mealItem.quantity}, Required: ${quantityToReduce}`
             });
           }
           await MealOfDay.findByIdAndUpdate(
@@ -810,8 +810,8 @@ app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
     if (status === 'cancelled' && order.status === 'completed') {
       for (const item of order.items) {
         const quantityToRestore = item.quantity || 1;
-        
-        if (item.itemType === 'Menu') {
+
+        if (item.itemType === 'Menu' || item.itemType === 'Meat') {
           await Menu.findByIdAndUpdate(
             item.menuItem,
             { $inc: { quantity: quantityToRestore } },
@@ -1339,10 +1339,10 @@ app.get('/api/cart/:userId', async (req, res) => {
 
     // Manually populate each item
     for (let item of cart.items) {
-      if (item.itemType === 'Menu') {
+      if (item.itemType === 'Menu' || item.itemType === 'Meat') {
         item.menuItem = await Menu.findById(item.menuItem)
-          .select('name price image priceOptions category');
-        
+          .select('name price image priceOptions category adminType');
+
         // Ensure selectedSize matches a valid option
         if (item.selectedSize && item.menuItem.priceOptions) {
           const validSize = item.menuItem.priceOptions.some(
@@ -1383,7 +1383,7 @@ app.patch('/api/cart/items', authenticateJWT, async (req, res) => {
     if (typeof quantity !== 'number' || quantity < 0) {
       return res.status(400).json({ error: 'Invalid quantity' });
     }
-    if (!['Menu', 'MealOfDay'].includes(itemType)) {
+    if (!['Menu', 'MealOfDay', 'Meat'].includes(itemType)) {
       return res.status(400).json({ error: 'Invalid itemType' });
     }
 
@@ -1458,7 +1458,7 @@ app.delete('/api/cart/items/:itemId', authenticateJWT, async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(itemId)) {
       return res.status(400).json({ error: 'Invalid item ID' });
     }
-    if (!['Menu', 'MealOfDay'].includes(itemType)) {
+    if (!['Menu', 'MealOfDay', 'Meat'].includes(itemType)) {
       return res.status(400).json({ error: 'Invalid item type' });
     }
 
