@@ -40,9 +40,27 @@ if (!fs.existsSync(uploadsDir)) {
 // Serve uploaded files statically
 app.use('/uploads', express.static('uploads'));
 
-// CORS configuration - allow all origins for development and production
+// CORS configuration - allow specific origins for production and development
+const allowedOrigins = [
+  'https://cafeaticas.netlify.app',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001'
+];
+
 app.use(cors({
-  origin: '*', // Allow all origins without credentials
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      return callback(null, true);
+    } else {
+      return callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true, // Allow credentials
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'x-access-token']
 }));
