@@ -1147,6 +1147,31 @@ app.post('/api/mpesa/callback', async (req, res) => {
     }
 });
 
+// Get all meats (butchery items) (public endpoint)
+app.get('/api/meats', async (req, res) => {
+  try {
+    // Get meat items for butchery admin type
+    const meatItems = await Menu.find({ adminType: 'butchery' });
+    res.json(meatItems);
+  } catch (err) {
+    console.error('Error fetching meat items:', err);
+    res.status(500).json({ error: 'Failed to fetch meat items' });
+  }
+});
+
+// Get meat item by ID
+app.get('/api/meats/:id', async (req, res) => {
+  try {
+    const item = await Menu.findOne({ _id: req.params.id, adminType: 'butchery' });
+    if (item) {
+      res.json(item);
+    } else {
+      res.status(404).json({ error: 'Meat item not found' });
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch meat item' });
+  }
+});
 // Get all meals of the day (public endpoint)
 app.get('/api/meals', async (req, res) => {
   try {
