@@ -599,6 +599,65 @@ app.get('/api/orders/:id', authenticateAdmin, async (req, res) => {
     }
   });
 
+// Customer-facing: Get a single order by ID for a logged-in user
+app.get('/api/user/orders/:id', authenticateJWT, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id).populate('items.menuItem');
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    // If the order is associated with a user, ensure it belongs to the requester
+    if (order.userId) {
+      if (!req.user || String(order.userId) !== String(req.user.userId)) {
+        return res.status(403).json({ error: 'Unauthorized to access this order' });
+      }
+    }
+    return res.json(order);
+  } catch (err) {
+    console.error('User order fetch error:', err);
+    return res.status(500).json({ error: 'Failed to fetch order' });
+  }
+});
+
+// Public (guest) access: Get a single order by ID without auth
+// Returns essential fields only. Intended for guest order confirmation pages.
+app.get('/api/orders/public/:id', async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id).populate('items.menuItem');
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    // Whitelist fields to expose publicly
+    const safe = {
+      _id: order._id,
+      date: order.date,
+      items: (order.items || []).map(i => ({
+        itemType: i.itemType,
+        quantity: i.quantity,
+        selectedSize: i.selectedSize,
+        menuItem: i.menuItem ? {
+          _id: i.menuItem._id,
+          name: i.menuItem.name,
+          price: i.menuItem.price,
+          priceOptions: i.menuItem.priceOptions,
+          adminType: i.menuItem.adminType
+        } : undefined
+      })),
+      total: order.total,
+      deliveryFee: order.deliveryFee,
+      status: order.status,
+      paymentMethod: order.paymentMethod,
+      orderType: order.orderType,
+      customerName: order.customerName,
+      customerPhone: order.customerPhone
+    };
+    return res.json(safe);
+  } catch (err) {
+    console.error('Public order fetch error:', err);
+    return res.status(500).json({ error: 'Failed to fetch order' });
+  }
+});
+
 // Add new order
 app.post('/api/orders', async (req, res) => {
   // For new orders, we'll add adminType to each item
