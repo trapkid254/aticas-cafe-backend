@@ -62,7 +62,7 @@ app.use(cors({
   },
   credentials: true, // Allow credentials
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'x-access-token']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'x-access-token', 'X-Admin-Type']
 }));
 
 // Handle preflight requests
@@ -381,7 +381,13 @@ function authenticateJWT(req, res, next) {
 
 // Admin Auth Middleware
 function authenticateAdmin(req, res, next) {
-  const token = req.headers.authorization?.split(' ')[1];
+  // Accept tokens in either "Bearer <token>" or raw "<token>" format to be robust to client differences
+  const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+  let token = null;
+  if (authHeader) {
+    const parts = String(authHeader).split(' ');
+    token = (parts.length === 2 && parts[0].toLowerCase() === 'bearer') ? parts[1] : authHeader;
+  }
   if (!token) return res.status(401).json({ error: 'No token provided' });
   jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
     if (err || (decoded.role !== 'admin' && decoded.role !== 'superadmin')) {
