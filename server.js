@@ -1266,6 +1266,84 @@ app.get('/api/meats/:id', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch meat item' });
   }
 });
+
+// Add new meat (butchery menu item) (protected)
+app.post('/api/meats', authenticateAdmin, async (req, res) => {
+  try {
+    // Only butchery admins can create meats
+    const adminType = req.admin?.adminType || 'cafeteria';
+    if (adminType !== 'butchery') {
+      return res.status(403).json({ success: false, error: 'Unauthorized: butchery admin required' });
+    }
+
+    const { name, price, image, description, quantity, category } = req.body || {};
+    if (!name || typeof price !== 'number' || !image) {
+      return res.status(400).json({ success: false, error: 'Name, numeric price, and image are required.' });
+    }
+
+    const meatData = {
+      name: String(name),
+      price: Number(price),
+      image: String(image),
+      description: String(description || ''),
+      quantity: Number(quantity || 0),
+      category: String(category || 'beef'),
+      adminType: 'butchery'
+    };
+
+    const newMeat = new Menu(meatData);
+    await newMeat.save();
+    return res.json({ success: true, item: newMeat });
+  } catch (err) {
+    console.error('Add meat error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to add meat' });
+  }
+});
+
+// Update meat (protected)
+app.put('/api/meats/:id', authenticateAdmin, async (req, res) => {
+  try {
+    // Verify item exists and is a butchery item
+    const existing = await Menu.findById(req.params.id);
+    if (!existing) return res.status(404).json({ success: false, error: 'Meat item not found' });
+    if (existing.adminType !== 'butchery') {
+      return res.status(403).json({ success: false, error: 'Unauthorized to modify this item' });
+    }
+
+    // Only allow certain fields to be updated; never allow adminType change
+    const update = {};
+    if (typeof req.body.name === 'string') update.name = req.body.name;
+    if (typeof req.body.price === 'number') update.price = req.body.price;
+    if (typeof req.body.image === 'string') update.image = req.body.image;
+    if (typeof req.body.description === 'string') update.description = req.body.description;
+    if (typeof req.body.quantity === 'number') update.quantity = req.body.quantity;
+    if (typeof req.body.category === 'string') update.category = req.body.category;
+
+    const updated = await Menu.findByIdAndUpdate(req.params.id, update, { new: true });
+    if (!updated) return res.status(404).json({ success: false, error: 'Meat item not found' });
+    return res.json({ success: true, item: updated });
+  } catch (err) {
+    console.error('Update meat error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update meat' });
+  }
+});
+
+// Delete meat (protected)
+app.delete('/api/meats/:id', authenticateAdmin, async (req, res) => {
+  try {
+    const existing = await Menu.findById(req.params.id);
+    if (!existing) return res.status(404).json({ success: false, error: 'Meat item not found' });
+    if (existing.adminType !== 'butchery') {
+      return res.status(403).json({ success: false, error: 'Unauthorized to delete this item' });
+    }
+
+    await Menu.findByIdAndDelete(req.params.id);
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Delete meat error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to delete meat' });
+  }
+});
 // Get all meals of the day (public endpoint)
 app.get('/api/meals', async (req, res) => {
   try {
