@@ -62,11 +62,10 @@ app.use(cors({
   },
   credentials: true, // Allow credentials
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'x-access-token', 'X-Admin-Type']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'x-access-token', 'X-Admin-Type', 'x-admin-type']
 }));
 
-// Handle preflight requests
-app.options('*', cors());
+// Preflight requests are handled by the above cors() middleware
 
 require('dotenv').config();
 const bodyParser = require('body-parser');
@@ -553,19 +552,23 @@ app.delete('/api/employees/:id', authenticateAdmin, async (req, res) => {
 app.get('/api/orders', authenticateAdmin, async (req, res) => {
   try {
     const adminType = req.admin?.adminType || 'cafeteria';
-    
-    // Get all menu items for this admin type to filter orders
-    const menuItems = await Menu.find({ adminType }).select('_id');
-    const menuItemIds = menuItems.map(item => item._id);
-    
-    // Find orders that have at least one item from this admin's menu
-    const orders = await Order.find({
-      $or: [
-        { 'items.menuItem': { $in: menuItemIds } },
-        { 'items.adminType': adminType } // For backward compatibility
-      ]
-    }).populate('items.menuItem').sort({ date: -1 });
-    
+    const isSuperAdmin = req.admin && (req.admin.role === 'superadmin');
+
+    // Load all orders and populate items for reliable filtering, then filter in-memory.
+    // This ensures legacy orders (without items.adminType) are still shown using menuItem.adminType.
+    let orders = await Order.find({})
+      .populate('items.menuItem')
+      .sort({ date: -1 });
+
+    if (!isSuperAdmin) {
+      orders = orders.filter(order =>
+        (order.items || []).some(item => {
+          const itemAdminType = item.adminType || (item.menuItem && item.menuItem.adminType) || 'cafeteria';
+          return itemAdminType === adminType;
+        })
+      );
+    }
+
     res.json(orders);
   } catch (err) {
     console.error('Error fetching orders:', err);
