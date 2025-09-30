@@ -14,6 +14,15 @@ const storage = multer.diskStorage({
   }
 });
 
+// Admin profile - for debugging current admin token payload
+app.get('/api/admin/profile', authenticateAdmin, (req, res) => {
+  try {
+    return res.json({ success: true, admin: req.admin });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: 'Failed to load admin profile' });
+  }
+});
+
 const upload = multer({ 
   storage: storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
@@ -1274,7 +1283,7 @@ app.post('/api/meats', authenticateAdmin, async (req, res) => {
     const adminType = req.admin?.adminType || 'cafeteria';
     const role = req.admin?.role || 'admin';
     if (adminType !== 'butchery' && role !== 'superadmin') {
-      return res.status(403).json({ success: false, error: 'Unauthorized: butchery admin required' });
+      return res.status(403).json({ success: false, error: 'Unauthorized: butchery admin required', detected: { adminType, role } });
     }
 
     const { name, price, image, description, quantity, category } = req.body || {};
@@ -1309,7 +1318,7 @@ app.put('/api/meats/:id', authenticateAdmin, async (req, res) => {
     if (!existing) return res.status(404).json({ success: false, error: 'Meat item not found' });
     const role = req.admin?.role || 'admin';
     if (existing.adminType !== 'butchery' && role !== 'superadmin') {
-      return res.status(403).json({ success: false, error: 'Unauthorized to modify this item' });
+      return res.status(403).json({ success: false, error: 'Unauthorized to modify this item', detected: { adminType: req.admin?.adminType, role } });
     }
 
     // Only allow certain fields to be updated; never allow adminType change
@@ -1337,7 +1346,7 @@ app.delete('/api/meats/:id', authenticateAdmin, async (req, res) => {
     if (!existing) return res.status(404).json({ success: false, error: 'Meat item not found' });
     const role = req.admin?.role || 'admin';
     if (existing.adminType !== 'butchery' && role !== 'superadmin') {
-      return res.status(403).json({ success: false, error: 'Unauthorized to delete this item' });
+      return res.status(403).json({ success: false, error: 'Unauthorized to delete this item', detected: { adminType: req.admin?.adminType, role } });
     }
 
     await Menu.findByIdAndDelete(req.params.id);
