@@ -14,14 +14,6 @@ const storage = multer.diskStorage({
   }
 });
 
-// Admin profile - for debugging current admin token payload
-app.get('/api/admin/profile', authenticateAdmin, (req, res) => {
-  try {
-    return res.json({ success: true, admin: req.admin });
-  } catch (err) {
-    return res.status(500).json({ success: false, error: 'Failed to load admin profile' });
-  }
-});
 
 const upload = multer({ 
   storage: storage,
@@ -81,6 +73,15 @@ app.use(cors({
 }));
 
 // Preflight requests are handled by the above cors() middleware
+
+// Admin profile - for debugging current admin token payload (must be after CORS)
+app.get('/api/admin/profile', authenticateAdmin, (req, res) => {
+  try {
+    return res.json({ success: true, admin: req.admin });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: 'Failed to load admin profile' });
+  }
+});
 
 require('dotenv').config();
 const bodyParser = require('body-parser');
