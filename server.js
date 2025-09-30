@@ -1272,7 +1272,8 @@ app.post('/api/meats', authenticateAdmin, async (req, res) => {
   try {
     // Only butchery admins can create meats
     const adminType = req.admin?.adminType || 'cafeteria';
-    if (adminType !== 'butchery') {
+    const role = req.admin?.role || 'admin';
+    if (adminType !== 'butchery' && role !== 'superadmin') {
       return res.status(403).json({ success: false, error: 'Unauthorized: butchery admin required' });
     }
 
@@ -1306,7 +1307,8 @@ app.put('/api/meats/:id', authenticateAdmin, async (req, res) => {
     // Verify item exists and is a butchery item
     const existing = await Menu.findById(req.params.id);
     if (!existing) return res.status(404).json({ success: false, error: 'Meat item not found' });
-    if (existing.adminType !== 'butchery') {
+    const role = req.admin?.role || 'admin';
+    if (existing.adminType !== 'butchery' && role !== 'superadmin') {
       return res.status(403).json({ success: false, error: 'Unauthorized to modify this item' });
     }
 
@@ -1333,7 +1335,8 @@ app.delete('/api/meats/:id', authenticateAdmin, async (req, res) => {
   try {
     const existing = await Menu.findById(req.params.id);
     if (!existing) return res.status(404).json({ success: false, error: 'Meat item not found' });
-    if (existing.adminType !== 'butchery') {
+    const role = req.admin?.role || 'admin';
+    if (existing.adminType !== 'butchery' && role !== 'superadmin') {
       return res.status(403).json({ success: false, error: 'Unauthorized to delete this item' });
     }
 
