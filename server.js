@@ -46,7 +46,12 @@ const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:3001',
   'http://127.0.0.1:3000',
-  'http://127.0.0.1:3001'
+  'http://127.0.0.1:3001',
+  // Common dev servers (e.g., Live Server, Vite, etc.)
+  'http://localhost:5500',
+  'http://127.0.0.1:5500',
+  // When pages are opened from file://, browsers send Origin: null
+  'null'
 ];
 
 app.use(cors({
@@ -54,7 +59,7 @@ app.use(cors({
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
 
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     } else {
       return callback(new Error('Not allowed by CORS'));
@@ -62,7 +67,8 @@ app.use(cors({
   },
   credentials: true, // Allow credentials
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'x-access-token', 'X-Admin-Type', 'x-admin-type']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'x-access-token', 'X-Admin-Type', 'x-admin-type'],
+  optionsSuccessStatus: 200
 }));
 
 // Preflight requests are handled by the above cors() middleware
