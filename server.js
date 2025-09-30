@@ -1053,50 +1053,52 @@ app.get('/api/dashboard/stats', authenticateAdmin, async (req, res) => {
         const adminType = req.admin?.adminType || 'cafeteria';
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        
-        // Get menu items for this admin type
-        const menuItems = await Menu.find({ adminType }).select('_id');
-        const menuItemIds = menuItems.map(item => item._id);
-        
-        // Find orders with items from this admin's menu
-        const orders = await Order.find({
-            $or: [
-                { 'items.menuItem': { $in: menuItemIds } },
-                { 'items.adminType': adminType }
-            ]
-        });
-        
+
+        // Load orders and populate items to allow robust filtering
+        let orders = await Order.find({})
+            .sort({ createdAt: -1, date: -1 })
+            .populate('items.menuItem');
+
+        // Filter orders that belong to this admin type
+        orders = orders.filter(order =>
+            (order.items || []).some(item => {
+                const itemAdminType = item.adminType || (item.menuItem && item.menuItem.adminType) || 'cafeteria';
+                return itemAdminType === adminType;
+            })
+        );
+
         // Filter today's orders
         const todayOrders = orders.filter(order => {
             const orderDate = new Date(order.createdAt || order.date);
             return orderDate >= today;
         });
-        
-        // Calculate stats
+
+        // Calculate stats (use order.total primarily, with fallbacks)
+        const getTotal = (o) => {
+            return (
+                (typeof o.total === 'number' ? o.total : 0) ||
+                (typeof o.totalAmount === 'number' ? o.totalAmount : 0)
+            );
+        };
+
         const stats = {
             todayOrders: todayOrders.length,
-            todayRevenue: todayOrders.reduce((sum, order) => sum + (order.totalAmount || 0), 0),
+            todayRevenue: todayOrders.reduce((sum, o) => sum + getTotal(o), 0),
             pendingOrders: orders.filter(o => o.status === 'pending').length,
             completedOrders: orders.filter(o => o.status === 'completed').length
         };
-        
-        // Get recent orders (last 5)
-        const recentOrders = await Order.find({
-            $or: [
-                { 'items.menuItem': { $in: menuItemIds } },
-                { 'items.adminType': adminType }
-            ]
-        })
-        .sort({ createdAt: -1, date: -1 })
-        .limit(5)
-        .populate('items.menuItem');
-        
+
+        // Recent orders (last 5) from the filtered list
+        const recentOrders = orders
+            .slice(0, 5)
+            .map(o => o); // already populated
+
         res.json({
             success: true,
             stats,
             recentOrders
         });
-        
+
     } catch (err) {
         console.error('Dashboard stats error:', err);
         res.status(500).json({ success: false, error: 'Failed to fetch dashboard stats' });
