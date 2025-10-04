@@ -1135,7 +1135,14 @@ app.post('/api/mpesa/payment', async (req, res) => {
         phone = '254' + phone.slice(1);
     }
     try {
-        console.log('Received M-Pesa payment request:', { phone, amount, orderId });
+        // Ensure amount is a positive integer as required by Daraja
+        const amtNum = Math.max(0, Number(amount || 0));
+        const intAmount = Math.round(amtNum);
+        if (!intAmount || intAmount < 1) {
+            return res.status(400).json({ error: 'Invalid amount. Amount must be at least 1 KES.' });
+        }
+
+        console.log('Received M-Pesa payment request:', { phone, amount: intAmount, orderId });
         // 1. Get access token
         const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
         const tokenRes = await fetch('https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials', {
@@ -1164,7 +1171,7 @@ app.post('/api/mpesa/payment', async (req, res) => {
             Password: password,
             Timestamp: timestamp,
             TransactionType: 'CustomerPayBillOnline',
-            Amount: amount,
+            Amount: intAmount,
             PartyA: phone,
             PartyB: shortcode,
             PhoneNumber: phone,
@@ -1183,7 +1190,33 @@ app.post('/api/mpesa/payment', async (req, res) => {
             body: JSON.stringify(payload)
         });
         const stkData = await stkRes.json();
-        res.json(stkData);
+
+        // Handle Daraja error shapes
+        // Success shape: { MerchantRequestID, CheckoutRequestID, ResponseCode: '0', CustomerMessage, ... }
+        // Error shape: { errorCode, errorMessage } or ResponseCode !== '0'
+        const responseCode = String(stkData.ResponseCode || '').trim();
+        const merchantRequestId = stkData.MerchantRequestID;
+        const checkoutRequestId = stkData.CheckoutRequestID;
+
+        if (stkData.errorCode || stkData.errorMessage || responseCode !== '0' || !merchantRequestId) {
+            const message = stkData.errorMessage || stkData.error || stkData.ResponseDescription || 'Failed to initiate M-Pesa payment';
+            return res.status(400).json({
+                error: message,
+                details: {
+                    ResponseCode: stkData.ResponseCode,
+                    errorCode: stkData.errorCode,
+                    errorMessage: stkData.errorMessage
+                }
+            });
+        }
+
+        // Normalize success payload
+        return res.json({
+            MerchantRequestID: merchantRequestId,
+            CheckoutRequestID: checkoutRequestId,
+            ResponseCode: responseCode,
+            CustomerMessage: stkData.CustomerMessage || 'STK Push sent to handset'
+        });
     } catch (err) {
         console.error('M-Pesa Payment Error:', err);
         res.status(500).json({ error: err.message });
