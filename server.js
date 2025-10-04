@@ -1166,14 +1166,20 @@ app.post('/api/mpesa/payment', async (req, res) => {
         const timestamp = new Date().toISOString().replace(/[-T:.Z]/g, '').slice(0, 14);
         const password = Buffer.from(shortcode + passkey + timestamp).toString('base64');
         
-        // Use orderId if provided, otherwise use orderDetails or default
+        // Use orderId if provided, otherwise use orderDetails (with nonce) or default unique reference
+        const nonce = Date.now().toString();
         let accountReference;
         if (orderId) {
-            accountReference = orderId;
+            accountReference = String(orderId);
         } else if (req.body.orderDetails) {
-            accountReference = JSON.stringify(req.body.orderDetails);
+            try {
+                const details = { ...req.body.orderDetails, __nonce: nonce };
+                accountReference = JSON.stringify(details);
+            } catch (_) {
+                accountReference = `AticasCafe-${nonce.slice(-6)}`;
+            }
         } else {
-            accountReference = 'AticasCafe';
+            accountReference = `AticasCafe-${nonce.slice(-6)}`;
         }
         
         const payload = {
@@ -1187,7 +1193,7 @@ app.post('/api/mpesa/payment', async (req, res) => {
             PhoneNumber: phone,
             CallBackURL: 'https://aticas-backend.onrender.com/api/mpesa/callback',
             AccountReference: accountReference,
-            TransactionDesc: 'Aticas Cafe Order'
+            TransactionDesc: `Aticas Cafe Order ${nonce.slice(-6)}`
         };
 
         // 3. Send STK push
