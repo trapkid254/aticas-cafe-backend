@@ -187,6 +187,10 @@ const orderSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   paymentMethod: { type: String },
   orderType: { type: String },
+  // M-Pesa related identifiers and receipt
+  merchantRequestId: { type: String },
+  checkoutRequestId: { type: String },
+  mpesaReceipt: { type: String },
   deliveryLocation: {
     buildingName: String,
     streetAddress: String,
@@ -1196,6 +1200,8 @@ app.post('/api/mpesa/callback', async (req, res) => {
         }
         const resultCode = callback.ResultCode;
         const resultDesc = callback.ResultDesc;
+        const merchantRequestId = callback.MerchantRequestID;
+        const checkoutRequestId = callback.CheckoutRequestID;
         const metadata = callback.CallbackMetadata;
         
         if (resultCode !== 0) {
@@ -1232,6 +1238,8 @@ app.post('/api/mpesa/callback', async (req, res) => {
         orderData.customerPhone = phone;
         orderData.total = amount;
         orderData.status = 'paid';
+        if (merchantRequestId) orderData.merchantRequestId = merchantRequestId;
+        if (checkoutRequestId) orderData.checkoutRequestId = checkoutRequestId;
         
         const newOrder = new Order(orderData);
         await newOrder.save();
@@ -1249,6 +1257,42 @@ app.post('/api/mpesa/callback', async (req, res) => {
         console.error('M-Pesa callback error:', err);
         res.status(500).json({ success: false, error: 'Failed to process payment callback' });
     }
+});
+
+// Poll order by MerchantRequestID (used by payment waiting page)
+app.get('/api/orders/by-merchant-request/:merchantRequestId', async (req, res) => {
+  try {
+    const { merchantRequestId } = req.params;
+    const order = await Order.findOne({ merchantRequestId });
+    if (!order) return res.status(404).json({ success: false, error: 'Order not found' });
+    return res.json(order);
+  } catch (err) {
+    console.error('Lookup by merchantRequestId error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to lookup order' });
+  }
+});
+
+// Optional cancel endpoint for timed-out/aborted payments (no-op if order not created yet)
+app.post('/api/orders/cancel', async (req, res) => {
+  try {
+    const { merchantRequestId } = req.body || {};
+    if (!merchantRequestId) {
+      return res.status(400).json({ success: false, error: 'merchantRequestId is required' });
+    }
+    const order = await Order.findOne({ merchantRequestId });
+    if (!order) {
+      // No order created yet; return success so client can proceed to cancelled page
+      return res.json({ success: true });
+    }
+    if (order.status !== 'paid') {
+      order.status = 'cancelled';
+      await order.save();
+    }
+    return res.json({ success: true, order });
+  } catch (err) {
+    console.error('Cancel by merchantRequestId error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to cancel order' });
+  }
 });
 
 // Get all meats (butchery items) (public endpoint)
