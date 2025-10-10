@@ -14,6 +14,8 @@ const storage = multer.diskStorage({
   }
 });
 
+ 
+
 
 const upload = multer({ 
   storage: storage,
@@ -255,7 +257,7 @@ const userSchema = new mongoose.Schema({
   phone: String,
   email: { type: String, unique: true },
   password: String
-});
+}, { timestamps: true });
 const User = mongoose.model('User', userSchema);
 
 // Mongoose Cart model
@@ -312,6 +314,46 @@ app.use(bodyParser.json());
 
 // Serve static files from frontend directory
 app.use(express.static(path.join(__dirname, '../frontend')));
+
+// User Registration (after body parser)
+app.post('/api/users/register',
+  body('name').trim().notEmpty().withMessage('Name is required'),
+  body('phone').trim().notEmpty().withMessage('Phone is required'),
+  body('email').isEmail().withMessage('Valid email is required'),
+  body('password').isLength({ min: 8, max: 64 }).withMessage('Password length invalid'),
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+      }
+
+      const { name, phone, email, password } = req.body;
+      const existing = await User.findOne({ email: email.toLowerCase() });
+      if (existing) {
+        return res.status(400).json({ success: false, error: 'Email already registered' });
+      }
+      const hashed = await bcrypt.hash(password, 10);
+      const user = new User({ name, phone, email: email.toLowerCase(), password: hashed });
+      await user.save();
+      return res.json({ success: true, user: { _id: user._id, name: user.name, phone: user.phone, email: user.email, createdAt: user.createdAt } });
+    } catch (err) {
+      console.error('User registration error:', err);
+      return res.status(500).json({ success: false, error: 'Registration failed' });
+    }
+  }
+);
+
+// Admin: List users (for reports)
+app.get('/api/users', authenticateAdmin, async (req, res) => {
+  try {
+    const users = await User.find({}, { name: 1, phone: 1, email: 1, createdAt: 1 }).sort({ createdAt: -1 });
+    return res.json({ success: true, users });
+  } catch (err) {
+    console.error('Fetch users error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to fetch users' });
+  }
+});
 
 // Explicitly serve Cafeteria Admin
 app.use('/admin', express.static(path.join(__dirname, '../frontend/admin')));
