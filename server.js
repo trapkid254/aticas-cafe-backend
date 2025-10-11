@@ -633,12 +633,32 @@ app.get('/api/orders', authenticateAdmin, async (req, res) => {
       .sort({ date: -1 });
 
     if (!isSuperAdmin) {
-      orders = orders.filter(order =>
-        (order.items || []).some(item => {
+      // For non-superadmin, include only items that match the adminType and
+      // recalculate order totals from those items. Drop orders that end up empty.
+      orders = orders
+        // First ensure the order contains at least one matching item
+        .filter(order => (order.items || []).some(item => {
           const itemAdminType = item.adminType || (item.menuItem && item.menuItem.adminType) || 'cafeteria';
           return itemAdminType === adminType;
+        }))
+        // Then project to objects with filtered items and recomputed totals
+        .map(order => {
+          const o = order.toObject();
+          o.items = (o.items || []).filter(item => {
+            const itemAdminType = item.adminType || (item.menuItem && item.menuItem.adminType) || 'cafeteria';
+            return itemAdminType === adminType;
+          });
+          // Recompute total based on remaining items only
+          o.total = (o.items || []).reduce((sum, item) => {
+            const unitPrice = (item.selectedSize && typeof item.selectedSize.price === 'number')
+              ? item.selectedSize.price
+              : ((item.menuItem && typeof item.menuItem.price === 'number') ? item.menuItem.price : 0);
+            const qty = typeof item.quantity === 'number' ? item.quantity : 1;
+            return sum + (unitPrice * qty);
+          }, 0);
+          return o;
         })
-      );
+        .filter(o => (o.items || []).length > 0);
     }
 
     res.json(orders);
@@ -670,11 +690,30 @@ app.get('/api/orders/:id', authenticateAdmin, async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized to access this order' });
     }
     
-    console.log('Fetched order:', JSON.stringify(order, null, 2));
-    if (!order) {
+    // For non-superadmin, filter items to the adminType and recompute totals
+    const isSuperAdmin = req.admin && (req.admin.role === 'superadmin');
+    if (isSuperAdmin) {
+      return res.json(order);
+    }
+
+    const o = order.toObject();
+    o.items = (o.items || []).filter(item => {
+      const itemAdminType = item.adminType || (item.menuItem && item.menuItem.adminType) || 'cafeteria';
+      return itemAdminType === adminType;
+    });
+    o.total = (o.items || []).reduce((sum, item) => {
+      const unitPrice = (item.selectedSize && typeof item.selectedSize.price === 'number')
+        ? item.selectedSize.price
+        : ((item.menuItem && typeof item.menuItem.price === 'number') ? item.menuItem.price : 0);
+      const qty = typeof item.quantity === 'number' ? item.quantity : 1;
+      return sum + (unitPrice * qty);
+    }, 0);
+
+    // If all items were filtered out (edge case), treat as not found for that admin
+    if (!o.items || o.items.length === 0) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    res.json(order);
+    return res.json(o);
   } catch (err) {
       res.status(500).json({ error: 'Failed to fetch order' });
     }
