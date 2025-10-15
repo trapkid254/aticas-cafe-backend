@@ -620,6 +620,7 @@ app.delete('/api/employees/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
+
 // Get all orders (protected) with admin type filtering
 app.get('/api/orders', authenticateAdmin, async (req, res) => {
   try {
@@ -951,14 +952,14 @@ app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
     const { status } = req.body;
     
     // First get the order to verify admin access
-    const order = await Order.findById(req.params.id);
+    const order = await Order.findById(req.params.id).populate('items.menuItem');
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
     
     // Verify admin has access to this order
-    const hasAccess = order.items.some(item => {
-      const itemAdminType = item.adminType || 'cafeteria';
+    const hasAccess = isSuperAdmin || (order.items || []).some(item => {
+      const itemAdminType = item.adminType || (item.menuItem && item.menuItem.adminType) || 'cafeteria';
       return itemAdminType === adminType;
     });
     
@@ -971,7 +972,7 @@ app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
     }
 
     // If status is being changed to 'completed', reduce quantities
-    if (status === 'completed' && order.status !== 'completed') {
+    if (typeof status === 'string' && status === 'completed' && order.status !== 'completed') {
       for (const item of order.items) {
         const quantityToReduce = item.quantity || 1;
 
@@ -1006,7 +1007,7 @@ app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
     }
     
     // If status is being changed to 'cancelled' from 'completed', restore quantities
-    if (status === 'cancelled' && order.status === 'completed') {
+    if (typeof status === 'string' && status === 'cancelled' && order.status === 'completed') {
       for (const item of order.items) {
         const quantityToRestore = item.quantity || 1;
 
@@ -1026,9 +1027,13 @@ app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
       }
     }
 
+    const updateDoc = {};
+    if (typeof status === 'string' && status.length) updateDoc.status = status;
+    if (typeof viewedByAdmin === 'boolean') updateDoc.viewedByAdmin = viewedByAdmin;
+
     const updatedOrder = await Order.findByIdAndUpdate(
-      req.params.id, 
-      { status },
+      req.params.id,
+      updateDoc,
       { new: true }
     );
     
