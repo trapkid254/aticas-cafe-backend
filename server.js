@@ -869,13 +869,15 @@ app.post('/api/orders', async (req, res) => {
     
     // Add adminType to each item in the order
     const itemsWithAdminType = await Promise.all(req.body.items.map(async (item) => {
-      if (item.itemType === 'Menu') {
+      // For Menu and Meat, read adminType from the Menu document; fallback sensibly
+      if (item.itemType === 'Menu' || item.itemType === 'Meat') {
         const menuItem = await Menu.findById(item.menuItem);
         return {
           ...item,
-          adminType: menuItem?.adminType || 'cafeteria'
+          adminType: menuItem?.adminType || (item.itemType === 'Meat' ? 'butchery' : 'cafeteria')
         };
       }
+      // For MealOfDay, default to cafeteria
       return {
         ...item,
         adminType: 'cafeteria' // Default for MealOfDay items
