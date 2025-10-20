@@ -811,7 +811,8 @@ app.post('/api/orders', async (req, res) => {
       }
       
       let found;
-      if (item.itemType === 'Menu') {
+      if (item.itemType === 'Menu' || item.itemType === 'Meat') {
+        // Meats are stored in the Menu collection with adminType: 'butchery'
         found = await Menu.findById(item.menuItem);
       } else if (item.itemType === 'MealOfDay') {
         found = await MealOfDay.findById(item.menuItem);
@@ -853,9 +854,10 @@ app.post('/api/orders', async (req, res) => {
       if (item.selectedSize) {
         price = item.selectedSize.price;
       } else {
-        const menuItem = item.itemType === 'Menu' 
-          ? await Menu.findById(item.menuItem)
-          : await MealOfDay.findById(item.menuItem);
+        // Use Menu for both 'Menu' and 'Meat'; MealOfDay uses its own model
+        const menuItem = item.itemType === 'MealOfDay'
+          ? await MealOfDay.findById(item.menuItem)
+          : await Menu.findById(item.menuItem);
         price = menuItem.price;
       }
       return {
