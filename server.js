@@ -176,6 +176,7 @@ const menuSchema = new mongoose.Schema({
   }
 });
 const Menu = mongoose.model('Menu', menuSchema);
+const Meat = mongoose.model('Meat', menuSchema, 'menus');
 
 // Mongoose Order model
 const orderSchema = new mongoose.Schema({
