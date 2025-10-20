@@ -949,7 +949,8 @@ app.post('/api/orders', async (req, res) => {
 app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
   try {
     const adminType = req.admin?.adminType || 'cafeteria';
-    const { status } = req.body;
+    const { status, viewedByAdmin } = req.body;
+    const isSuperAdmin = req.admin && (req.admin.role === 'superadmin');
     
     // First get the order to verify admin access
     const order = await Order.findById(req.params.id).populate('items.menuItem');
