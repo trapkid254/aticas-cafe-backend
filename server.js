@@ -1546,8 +1546,9 @@ app.get('/api/cart/:userId', async (req, res) => {
         item.menuItem = await Menu.findById(item.menuItem)
           .select('name price image priceOptions category adminType');
 
-        // Ensure selectedSize matches a valid option
-        if (item.selectedSize && item.menuItem.priceOptions) {
+        // Ensure selectedSize matches a valid option for Menu items only.
+        // For Meat, allow dynamic sizes (e.g., "0.50 kg") so do not invalidate.
+        if (item.itemType !== 'Meat' && item.selectedSize && item.menuItem.priceOptions) {
           const validSize = item.menuItem.priceOptions.some(
             opt => opt.size === item.selectedSize.size
           );
