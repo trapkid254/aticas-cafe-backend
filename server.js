@@ -1068,14 +1068,26 @@ app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Get all menu items (public endpoint)
+// Get all menu items (public endpoint) - only cafeteria items for public access
 app.get('/api/menu', async (req, res) => {
   try {
-    // Get menu items for both admin types by default
-    const menuItems = await Menu.find({});
+    // Only return cafeteria menu items for public access
+    const menuItems = await Menu.find({ adminType: 'cafeteria' });
     res.json(menuItems);
   } catch (err) {
     console.error('Error fetching menu items:', err);
+    res.status(500).json({ error: 'Failed to fetch menu items' });
+  }
+});
+
+// Get admin menu items (protected) - filtered by admin type
+app.get('/api/admin/menu', authenticateAdmin, async (req, res) => {
+  try {
+    const adminType = req.admin?.adminType || 'cafeteria';
+    const menuItems = await Menu.find({ adminType });
+    res.json(menuItems);
+  } catch (err) {
+    console.error('Error fetching admin menu items:', err);
     res.status(500).json({ error: 'Failed to fetch menu items' });
   }
 });
