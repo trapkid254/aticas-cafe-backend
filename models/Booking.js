@@ -13,6 +13,16 @@ const BookingSchema = new mongoose.Schema({
   location: { type: String },  // for catering
   pickup: { type: String },    // for tour
   notes: { type: String },
+  // Payment fields
+  totalAmount: { type: Number, required: true },
+  depositRequired: { type: Number, required: true }, // 70% of total
+  depositPaid: { type: Boolean, default: false },
+  depositAmount: { type: Number, default: 0 },
+  paymentStatus: { type: String, enum: ['pending', 'deposit_paid', 'fully_paid', 'cancelled'], default: 'pending' },
+  // M-Pesa payment identifiers
+  merchantRequestId: { type: String },
+  checkoutRequestId: { type: String },
+  mpesaReceipt: { type: String },
   createdAt: { type: Date, default: Date.now }
 });
 

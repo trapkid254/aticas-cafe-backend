@@ -1765,7 +1765,12 @@ app.get('/api/user-orders', authenticateJWT, async (req, res) => {
 // Bookings endpoints
 app.post('/api/bookings', async (req, res) => {
   try {
-    const booking = new Booking(req.body);
+    const bookingData = { ...req.body };
+    // Calculate deposit if totalAmount is provided
+    if (bookingData.totalAmount) {
+      bookingData.depositRequired = Math.round(bookingData.totalAmount * 0.7);
+    }
+    const booking = new Booking(bookingData);
     await booking.save();
     res.status(201).json({ success: true, booking });
   } catch (err) {
@@ -1780,6 +1785,24 @@ app.get('/api/bookings', async (req, res) => {
     res.json({ success: true, bookings });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to fetch bookings' });
+  }
+});
+
+app.put('/api/bookings/:id', authenticateAdmin, async (req, res) => {
+  try {
+    const { paymentStatus } = req.body;
+    const updatedBooking = await Booking.findByIdAndUpdate(
+      req.params.id,
+      { paymentStatus },
+      { new: true }
+    );
+    if (updatedBooking) {
+      res.json({ success: true, booking: updatedBooking });
+    } else {
+      res.status(404).json({ success: false, error: 'Booking not found' });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to update booking' });
   }
 });
 
