@@ -1068,11 +1068,17 @@ app.put('/api/orders/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Get all menu items (public endpoint) - only cafeteria items for public access
+// Get all menu items (public endpoint) - cafeteria items and legacy items for public access
 app.get('/api/menu', async (req, res) => {
   try {
-    // Only return cafeteria menu items for public access
-    const menuItems = await Menu.find({ adminType: 'cafeteria' });
+    // Return cafeteria menu items OR items without adminType (legacy items treated as cafeteria)
+    const menuItems = await Menu.find({
+      $or: [
+        { adminType: 'cafeteria' },
+        { adminType: { $exists: false } },
+        { adminType: null }
+      ]
+    });
     res.json(menuItems);
   } catch (err) {
     console.error('Error fetching menu items:', err);
@@ -1084,7 +1090,14 @@ app.get('/api/menu', async (req, res) => {
 app.get('/api/admin/menu', authenticateAdmin, async (req, res) => {
   try {
     const adminType = req.admin?.adminType || 'cafeteria';
-    const menuItems = await Menu.find({ adminType });
+    // Include items with matching adminType OR items without adminType (legacy items)
+    const menuItems = await Menu.find({
+      $or: [
+        { adminType },
+        { adminType: { $exists: false } },
+        { adminType: null }
+      ]
+    });
     res.json(menuItems);
   } catch (err) {
     console.error('Error fetching admin menu items:', err);
@@ -1418,8 +1431,14 @@ app.delete('/api/meats/:id', authenticateAdmin, async (req, res) => {
 // Get all meals of the day (public endpoint)
 app.get('/api/meals', async (req, res) => {
   try {
-    // Get meals for both admin types by default
-    const meals = await MealOfDay.find({});
+    // Get meals for both admin types by default, including legacy items
+    const meals = await MealOfDay.find({
+      $or: [
+        { adminType: { $exists: false } },
+        { adminType: null },
+        { adminType: { $ne: null } }
+      ]
+    });
     res.json(meals);
   } catch (err) {
     console.error('Error fetching meals of the day:', err);
