@@ -310,6 +310,9 @@ const Cart = mongoose.model('Cart', cartSchema);
 // Import the Booking model
 const Booking = require('./models/Booking');
 
+// Import the ServiceBooking model
+const ServiceBooking = require('./models/ServiceBooking');
+
 // Middleware
 app.use(bodyParser.json());
 
@@ -404,6 +407,31 @@ app.get('/butchery-admin/reports', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/butchery-admin/reports.html'));
 });
 
+// Route for garage-carwash admin index page
+app.get('/garage-carwash-admin', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/garage-carwash-admin/index.html'));
+});
+
+// Route for garage-carwash admin login
+app.get('/garage-carwash-admin/login', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/garage-carwash-admin/garage-carwash-admin-login.html'));
+});
+
+// Route for garage-carwash admin dashboard
+app.get('/garage-carwash-admin/dashboard', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/garage-carwash-admin/dashboard.html'));
+});
+
+// Route for service bookings
+app.get('/garage-carwash-admin/bookings', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/garage-carwash-admin/bookings.html'));
+});
+
+// Route for reports
+app.get('/garage-carwash-admin/reports', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/garage-carwash-admin/reports.html'));
+});
+
 // JWT Auth Middleware
 function authenticateJWT(req, res, next) {
   const authHeader = req.headers['authorization'] || req.headers['Authorization'];
@@ -472,11 +500,11 @@ function authenticateAdmin(req, res, next) {
 
 // Routes
 
-// Admin login - handles both butchery and cafeteria admins
+// Admin login - handles cafeteria, butchery, and garage-carwash admins
 app.post('/api/admin/login',
   body('employmentNumber').notEmpty(),
   body('password').notEmpty(),
-  body('adminType').isIn(['cafeteria', 'butchery']).withMessage('Invalid admin type'),
+  body('adminType').isIn(['cafeteria', 'butchery', 'garage-carwash']).withMessage('Invalid admin type'),
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
@@ -1752,6 +1780,53 @@ app.get('/api/bookings', async (req, res) => {
     res.json({ success: true, bookings });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to fetch bookings' });
+  }
+});
+
+// Service Bookings endpoints
+app.post('/api/service-bookings', async (req, res) => {
+  try {
+    const serviceBooking = new ServiceBooking(req.body);
+    await serviceBooking.save();
+    res.status(201).json({ success: true, booking: serviceBooking });
+  } catch (err) {
+    console.error('Error creating service booking:', err);
+    res.status(500).json({ success: false, error: 'Failed to create service booking' });
+  }
+});
+
+app.get('/api/service-bookings', authenticateAdmin, async (req, res) => {
+  try {
+    const adminType = req.admin?.adminType || 'garage-carwash';
+    if (adminType !== 'garage-carwash' && req.admin?.role !== 'superadmin') {
+      return res.status(403).json({ success: false, error: 'Unauthorized' });
+    }
+    const serviceBookings = await ServiceBooking.find().sort({ createdAt: -1 });
+    res.json({ success: true, bookings: serviceBookings });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to fetch service bookings' });
+  }
+});
+
+app.put('/api/service-bookings/:id', authenticateAdmin, async (req, res) => {
+  try {
+    const adminType = req.admin?.adminType || 'garage-carwash';
+    if (adminType !== 'garage-carwash' && req.admin?.role !== 'superadmin') {
+      return res.status(403).json({ success: false, error: 'Unauthorized' });
+    }
+    const { status } = req.body;
+    const updatedBooking = await ServiceBooking.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true }
+    );
+    if (updatedBooking) {
+      res.json({ success: true, booking: updatedBooking });
+    } else {
+      res.status(404).json({ success: false, error: 'Service booking not found' });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to update service booking' });
   }
 });
 

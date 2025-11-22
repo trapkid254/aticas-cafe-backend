@@ -11,32 +11,71 @@ async function seedAdmin() {
     await mongoose.connect(MONGODB_URI);
     console.log('Successfully connected to MongoDB for seeding.');
 
-    const existingAdmin = await Admin.findOne({ employmentNumber: 'admin' });
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash('admin@aticas', salt);
+
+    // Seed Cafeteria Admin
+    let cafeteriaAdmin = await Admin.findOne({ employmentNumber: 'AC001' });
+    if (!cafeteriaAdmin) {
+      cafeteriaAdmin = new Admin({
+        employmentNumber: 'AC001',
+        name: 'Cafeteria Admin',
+        password: hashedPassword,
+        role: 'admin',
+        adminType: 'cafeteria'
+      });
+      await cafeteriaAdmin.save();
+      console.log('Cafeteria admin created: AC001');
+    }
+
+    // Seed Butchery Admin
+    let butcheryAdmin = await Admin.findOne({ employmentNumber: 'AB001' });
+    if (!butcheryAdmin) {
+      butcheryAdmin = new Admin({
+        employmentNumber: 'AB001',
+        name: 'Butchery Admin',
+        password: hashedPassword,
+        role: 'admin',
+        adminType: 'butchery'
+      });
+      await butcheryAdmin.save();
+      console.log('Butchery admin created: AB001');
+    }
+
+    // Seed Garage & Car Wash Admin
+    let garageCarwashAdmin = await Admin.findOne({ employmentNumber: 'AG001' });
+    if (!garageCarwashAdmin) {
+      garageCarwashAdmin = new Admin({
+        employmentNumber: 'AG001',
+        name: 'Garage & Car Wash Admin',
+        password: hashedPassword,
+        role: 'admin',
+        adminType: 'garage-carwash'
+      });
+      await garageCarwashAdmin.save();
+      console.log('Garage & Car Wash admin created: AG001');
+    }
+
+    // Update any existing admin with old employmentNumber
+    const existingAdmin = await Admin.findOne({ employmentNumber: 'admin' });
     if (existingAdmin) {
       existingAdmin.employmentNumber = 'AC001';
       existingAdmin.password = hashedPassword;
       existingAdmin.role = 'superadmin';
+      existingAdmin.adminType = 'cafeteria';
       await existingAdmin.save();
-      console.log('Admin user updated to super admin.');
-      return;
+      console.log('Existing admin updated to super admin: AC001');
     }
-    const newAdmin = new Admin({
-      employmentNumber: 'AC001',
-      name: 'Default Admin',
-      password: hashedPassword,
-      role: 'superadmin'
-    });
 
-    await newAdmin.save();
-    console.log('Default admin user has been created successfully!');
-    console.log('You can now log in with:');
-    console.log('Employment Number: AC001');
+    console.log('\nAdmin users have been seeded successfully!');
+    console.log('Login credentials for all admins:');
     console.log('Password: admin@aticas');
+    console.log('Cafeteria Admin: AC001');
+    console.log('Butchery Admin: AB001');
+    console.log('Garage & Car Wash Admin: AG001');
 
   } catch (error) {
-    console.error('Error seeding admin user:', error);
+    console.error('Error seeding admin users:', error);
   } finally {
     mongoose.connection.close();
   }
