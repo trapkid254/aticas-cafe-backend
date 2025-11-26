@@ -46,6 +46,8 @@ app.use('/uploads', express.static('uploads'));
 // CORS configuration - allow specific origins for production and development
 const allowedOrigins = [
   'https://cafeaticas.netlify.app',
+  'https://www.aticascafe.com',
+  'https://aticascafe.com',
   'http://localhost:3000',
   'http://localhost:3001',
   'http://127.0.0.1:3000',
