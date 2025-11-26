@@ -42,20 +42,6 @@ async function seedAdmin() {
       console.log('Butchery admin created: AB001');
     }
 
-    // Seed Garage & Car Wash Admin
-    let garageCarwashAdmin = await Admin.findOne({ employmentNumber: 'AG001' });
-    if (!garageCarwashAdmin) {
-      garageCarwashAdmin = new Admin({
-        employmentNumber: 'AG001',
-        name: 'Garage & Car Wash Admin',
-        password: hashedPassword,
-        role: 'admin',
-        adminType: 'garage-carwash'
-      });
-      await garageCarwashAdmin.save();
-      console.log('Garage & Car Wash admin created: AG001');
-    }
-
     // Update any existing admin with old employmentNumber
     const existingAdmin = await Admin.findOne({ employmentNumber: 'admin' });
     if (existingAdmin) {
@@ -72,7 +58,6 @@ async function seedAdmin() {
     console.log('Password: admin@aticas');
     console.log('Cafeteria Admin: AC001');
     console.log('Butchery Admin: AB001');
-    console.log('Garage & Car Wash Admin: AG001');
 
   } catch (error) {
     console.error('Error seeding admin users:', error);
