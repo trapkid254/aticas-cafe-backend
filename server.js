@@ -312,6 +312,9 @@ const Cart = mongoose.model('Cart', cartSchema);
 // Import the Booking model
 const Booking = require('./models/Booking');
 
+// Import the Event model
+const Event = require('./models/Event');
+
 // Import the ServiceBooking model
 
 // Middleware
@@ -1811,6 +1814,80 @@ app.put('/api/bookings/:id', authenticateAdmin, async (req, res) => {
     }
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to update booking' });
+  }
+});
+
+// Events endpoints
+// Get upcoming events (public)
+app.get('/api/events', async (req, res) => {
+  try {
+    const now = new Date();
+    const events = await Event.find({
+      active: true,
+      date: { $gte: now }
+    }).sort({ date: 1, featured: -1 });
+    res.json({ success: true, events });
+  } catch (err) {
+    console.error('Error fetching events:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch events' });
+  }
+});
+
+// Get all events (admin)
+app.get('/api/admin/events', authenticateAdmin, async (req, res) => {
+  try {
+    const events = await Event.find().sort({ date: -1 });
+    res.json({ success: true, events });
+  } catch (err) {
+    console.error('Error fetching admin events:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch events' });
+  }
+});
+
+// Create event (admin)
+app.post('/api/admin/events', authenticateAdmin, async (req, res) => {
+  try {
+    const eventData = { ...req.body };
+    const event = new Event(eventData);
+    await event.save();
+    res.status(201).json({ success: true, event });
+  } catch (err) {
+    console.error('Error creating event:', err);
+    res.status(500).json({ success: false, error: 'Failed to create event' });
+  }
+});
+
+// Update event (admin)
+app.put('/api/admin/events/:id', authenticateAdmin, async (req, res) => {
+  try {
+    const updatedEvent = await Event.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true }
+    );
+    if (updatedEvent) {
+      res.json({ success: true, event: updatedEvent });
+    } else {
+      res.status(404).json({ success: false, error: 'Event not found' });
+    }
+  } catch (err) {
+    console.error('Error updating event:', err);
+    res.status(500).json({ success: false, error: 'Failed to update event' });
+  }
+});
+
+// Delete event (admin)
+app.delete('/api/admin/events/:id', authenticateAdmin, async (req, res) => {
+  try {
+    const deletedEvent = await Event.findByIdAndDelete(req.params.id);
+    if (deletedEvent) {
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ success: false, error: 'Event not found' });
+    }
+  } catch (err) {
+    console.error('Error deleting event:', err);
+    res.status(500).json({ success: false, error: 'Failed to delete event' });
   }
 });
 
