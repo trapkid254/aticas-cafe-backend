@@ -1844,10 +1844,26 @@ app.get('/api/admin/events', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Create event (admin)
-app.post('/api/admin/events', authenticateAdmin, async (req, res) => {
+// Create event (admin) - with file upload
+app.post('/api/admin/events', authenticateAdmin, upload.single('image'), async (req, res) => {
   try {
     const eventData = { ...req.body };
+
+    // Handle image upload
+    if (req.file) {
+      eventData.image = `/uploads/${req.file.filename}`;
+    } else {
+      return res.status(400).json({ success: false, error: 'Image is required' });
+    }
+
+    // Convert string values to appropriate types
+    if (eventData.capacity) eventData.capacity = parseInt(eventData.capacity);
+    if (eventData.price) eventData.price = parseFloat(eventData.price);
+    if (eventData.featured === 'true') eventData.featured = true;
+    if (eventData.featured === 'false') eventData.featured = false;
+    if (eventData.active === 'true') eventData.active = true;
+    if (eventData.active === 'false') eventData.active = false;
+
     const event = new Event(eventData);
     await event.save();
     res.status(201).json({ success: true, event });
@@ -1857,12 +1873,27 @@ app.post('/api/admin/events', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Update event (admin)
-app.put('/api/admin/events/:id', authenticateAdmin, async (req, res) => {
+// Update event (admin) - with file upload
+app.put('/api/admin/events/:id', authenticateAdmin, upload.single('image'), async (req, res) => {
   try {
+    const updateData = { ...req.body };
+
+    // Handle image upload if provided
+    if (req.file) {
+      updateData.image = `/uploads/${req.file.filename}`;
+    }
+
+    // Convert string values to appropriate types
+    if (updateData.capacity) updateData.capacity = parseInt(updateData.capacity);
+    if (updateData.price) updateData.price = parseFloat(updateData.price);
+    if (updateData.featured === 'true') updateData.featured = true;
+    if (updateData.featured === 'false') updateData.featured = false;
+    if (updateData.active === 'true') updateData.active = true;
+    if (updateData.active === 'false') updateData.active = false;
+
     const updatedEvent = await Event.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      updateData,
       { new: true }
     );
     if (updatedEvent) {
