@@ -7,7 +7,7 @@ const app = express();
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, 'uploads/');
+    cb(null, '/tmp/uploads/');
   },
   filename: function (req, file, cb) {
     cb(null, Date.now() + path.extname(file.originalname));
@@ -35,13 +35,13 @@ const upload = multer({
 
 // Create uploads directory if it doesn't exist
 const fs = require('fs');
-const uploadsDir = 'uploads';
+const uploadsDir = '/tmp/uploads';
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
 // Serve uploaded files statically
-app.use('/uploads', express.static('uploads'));
+app.use('/uploads', express.static('/tmp/uploads'));
 
 // CORS configuration - allow specific origins for production and development
 const allowedOrigins = [
@@ -1848,6 +1848,8 @@ app.get('/api/admin/events', authenticateAdmin, async (req, res) => {
 app.post('/api/admin/events', authenticateAdmin, upload.single('image'), async (req, res) => {
   try {
     const eventData = { ...req.body };
+    console.log('Creating event with data:', eventData);
+    console.log('Uploaded file:', req.file);
 
     // Handle image upload
     if (req.file) {
@@ -1864,6 +1866,7 @@ app.post('/api/admin/events', authenticateAdmin, upload.single('image'), async (
     if (eventData.active === 'true') eventData.active = true;
     if (eventData.active === 'false') eventData.active = false;
 
+    console.log('Processed eventData:', eventData);
     const event = new Event(eventData);
     await event.save();
     res.status(201).json({ success: true, event });
@@ -1922,12 +1925,21 @@ app.delete('/api/admin/events/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
+// Error handling middleware
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+  console.error('Server error:', err);
+  res.status(500).json({ success: false, error: 'Internal server error' });
+});
 
 // Server startup is now handled by startServer() after MongoDB connection
 
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection:', reason);
 });
+
 process.on('uncaughtException', (err) => {
     console.error('Uncaught Exception:', err);
     // Exit with failure
