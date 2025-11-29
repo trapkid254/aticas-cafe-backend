@@ -2410,21 +2410,24 @@ app.post("/api/bookings/:id/feedback", async (req, res) => {
 app.put("/api/bookings/:id/status", authenticateAdmin, async (req, res) => {
   try {
     const { status, adminNotes } = req.body;
-    const booking = await Booking.findByIdAndUpdate(
-      req.params.id,
-      {
-        status,
-        adminNotes: adminNotes || booking.adminNotes,
-        lastAdminUpdate: new Date(),
-      },
-      { new: true },
-    );
 
-    if (!booking) {
+    // First get the current booking to preserve existing adminNotes if not provided
+    const existingBooking = await Booking.findById(req.params.id);
+    if (!existingBooking) {
       return res
         .status(404)
         .json({ success: false, error: "Booking not found" });
     }
+
+    const booking = await Booking.findByIdAndUpdate(
+      req.params.id,
+      {
+        status,
+        adminNotes: adminNotes !== undefined ? adminNotes : existingBooking.adminNotes,
+        lastAdminUpdate: new Date(),
+      },
+      { new: true },
+    );
 
     res.json({ success: true, booking });
   } catch (err) {
