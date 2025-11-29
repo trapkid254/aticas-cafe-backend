@@ -2095,7 +2095,7 @@ app.post("/api/bookings", async (req, res) => {
 });
 
 // Get all bookings (admin only)
-app.get("/api/bookings", authenticateAdmin, async (req, res) => {
+app.get("/api/bookings", async (req, res) => {
   try {
     const bookings = await Booking.find()
       .populate("userId", "name email phone")
