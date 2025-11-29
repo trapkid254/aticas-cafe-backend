@@ -56,6 +56,7 @@ const EventSchema = new mongoose.Schema({
   availableSpots: { type: Number }, // Remaining spots available
   price: { type: Number },
   discountPrice: { type: Number }, // Optional discounted price
+  fixedPrice: { type: Boolean, default: false }, // If true, price cannot be negotiated
   featured: { type: Boolean, default: false },
   active: { type: Boolean, default: true },
 

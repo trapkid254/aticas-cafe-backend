@@ -1847,6 +1847,26 @@ app.post(
 // Get cart for user
 app.get("/api/cart/:userId", async (req, res) => {
   try {
+    // Verify the requesting user matches the cart owner
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    let requestingUserId = null;
+
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        requestingUserId = decoded.userId;
+      } catch (err) {
+        return res.status(401).json({ error: "Invalid token" });
+      }
+    } else {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    // Ensure user can only access their own cart
+    if (requestingUserId !== req.params.userId) {
+      return res.status(403).json({ error: "Unauthorized to access this cart" });
+    }
+
     let cart = await Cart.findOne({ userId: req.params.userId }).lean();
 
     if (!cart) {
@@ -1888,8 +1908,8 @@ app.get("/api/cart/:userId", async (req, res) => {
   }
 });
 
-// Update cart item - use authenticated user's ID from JWT
-app.patch("/api/cart/items", authenticateJWT, async (req, res) => {
+// Update cart item - supports both authenticated and guest users
+app.patch("/api/cart/items", async (req, res) => {
   console.log("--- PATCH /api/cart/items ---");
   console.log("Request body:", JSON.stringify(req.body, null, 2));
 
@@ -1912,10 +1932,29 @@ app.patch("/api/cart/items", authenticateJWT, async (req, res) => {
       return res.status(400).json({ error: "Invalid itemType" });
     }
 
-    // Use the authenticated user's ID from JWT
-    const userId = req.user.userId;
+    // Check for authentication - handle both logged-in and guest users
+    let userId = null;
+    const token = req.headers.authorization?.replace("Bearer ", "");
 
-    // Find or create cart
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        userId = decoded.userId;
+      } catch (err) {
+        // Token invalid, continue as guest
+        console.log("Invalid token for cart update, treating as guest");
+      }
+    }
+
+    // Only authenticated users can use this endpoint
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "Authentication required for server cart updates. Guest carts are handled locally."
+      });
+    }
+
+    // Find or create cart for authenticated user
     let cart =
       (await Cart.findOne({ userId })) || new Cart({ userId, items: [] });
 
@@ -1980,12 +2019,26 @@ app.patch("/api/cart/items", authenticateJWT, async (req, res) => {
   }
 });
 
-// Remove item from cart - use authenticated user's ID from JWT
-app.delete("/api/cart/items/:itemId", authenticateJWT, async (req, res) => {
+// Remove item from cart - supports both authenticated and guest users
+app.delete("/api/cart/items/:itemId", async (req, res) => {
   try {
     const { itemType } = req.query;
     const { itemId } = req.params;
-    const userId = req.user.userId;
+
+    // Check for authentication
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    let userId = null;
+
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        userId = decoded.userId;
+      } catch (err) {
+        return res.status(401).json({ error: "Invalid token" });
+      }
+    } else {
+      return res.status(401).json({ error: "Authentication required" });
+    }
 
     // Validate input
     if (!mongoose.Types.ObjectId.isValid(itemId)) {
@@ -2021,11 +2074,26 @@ app.delete("/api/cart/items/:itemId", authenticateJWT, async (req, res) => {
   }
 });
 
-// Clear cart - use authenticated user's ID from JWT
-app.delete("/api/cart", authenticateJWT, async (req, res) => {
+// Clear cart - supports authenticated users only
+app.delete("/api/cart", async (req, res) => {
   try {
+    // Check for authentication
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    let userId = null;
+
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        userId = decoded.userId;
+      } catch (err) {
+        return res.status(401).json({ error: "Invalid token" });
+      }
+    } else {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
     const result = await Cart.findOneAndUpdate(
-      { userId: req.user.userId },
+      { userId },
       { $set: { items: [] } },
       { new: true, upsert: true },
     );
@@ -2261,6 +2329,51 @@ app.put("/api/bookings/:id/reject-price", async (req, res) => {
   }
 });
 
+// Customer counter offer
+app.put("/api/bookings/:id/counter-offer", async (req, res) => {
+  try {
+    const { counterOfferAmount, message } = req.body;
+    const booking = await Booking.findById(req.params.id);
+
+    if (!booking) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Booking not found" });
+    }
+
+    if (booking.status !== "price_proposed") {
+      return res
+        .status(400)
+        .json({ success: false, error: "No active price proposal to counter" });
+    }
+
+    if (!counterOfferAmount || counterOfferAmount <= 0) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Valid counter offer amount required" });
+    }
+
+    // Update booking with counter offer
+    booking.status = "customer_rejected"; // Reset to allow admin to respond
+    booking.priceNegotiationRound += 1;
+
+    // Add feedback with counter offer
+    booking.feedback.push({
+      from: "customer",
+      message: message || `Counter offer: Ksh ${counterOfferAmount}`,
+      proposedAmount: counterOfferAmount,
+    });
+
+    booking.lastCustomerResponse = new Date();
+    await booking.save();
+
+    res.json({ success: true, booking });
+  } catch (err) {
+    console.error("Error making counter offer:", err);
+    res.status(500).json({ success: false, error: "Failed to submit counter offer" });
+  }
+});
+
 // Add feedback to booking
 app.post("/api/bookings/:id/feedback", async (req, res) => {
   try {
@@ -2401,6 +2514,8 @@ app.post(
       // Convert string values to appropriate types
       if (eventData.capacity) eventData.capacity = parseInt(eventData.capacity);
       if (eventData.price) eventData.price = parseFloat(eventData.price);
+      if (eventData.fixedPrice === "true") eventData.fixedPrice = true;
+      if (eventData.fixedPrice === "false") eventData.fixedPrice = false;
       if (eventData.featured === "true") eventData.featured = true;
       if (eventData.featured === "false") eventData.featured = false;
       if (eventData.active === "true") eventData.active = true;
@@ -2435,6 +2550,8 @@ app.put(
       if (updateData.capacity)
         updateData.capacity = parseInt(updateData.capacity);
       if (updateData.price) updateData.price = parseFloat(updateData.price);
+      if (updateData.fixedPrice === "true") updateData.fixedPrice = true;
+      if (updateData.fixedPrice === "false") updateData.fixedPrice = false;
       if (updateData.featured === "true") updateData.featured = true;
       if (updateData.featured === "false") updateData.featured = false;
       if (updateData.active === "true") updateData.active = true;
