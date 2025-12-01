@@ -2240,6 +2240,46 @@ app.post("/api/bookings/guest", async (req, res) => {
   }
 });
 
+// Get user's event bookings
+app.get("/api/user/event-bookings", authenticateJWT, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ success: false, error: "User not found" });
+    }
+
+    // Find all events that have bookings for this user
+    const events = await Event.find({
+      "bookings.customerEmail": user.email
+    }).sort({ date: -1 });
+
+    // Extract user's bookings from events
+    const userEventBookings = [];
+    events.forEach(event => {
+      event.bookings.forEach(booking => {
+        if (booking.customerEmail === user.email) {
+          userEventBookings.push({
+            _id: `${event._id}_${booking._id}`,
+            eventId: event._id,
+            eventTitle: event.title,
+            eventDate: event.date,
+            eventType: event.type,
+            ...booking.toObject(),
+            createdAt: booking.bookingDate
+          });
+        }
+      });
+    });
+
+    res.json({ success: true, bookings: userEventBookings });
+  } catch (err) {
+    console.error("Error fetching user event bookings:", err);
+    res.status(500).json({ success: false, error: "Failed to fetch event bookings" });
+  }
+});
+
 // Admin propose price and feedback
 app.put(
   "/api/bookings/:id/propose-price",
@@ -2463,6 +2503,164 @@ app.put("/api/bookings/:id", authenticateAdmin, async (req, res) => {
     }
   } catch (err) {
     console.error("Error updating booking:", err);
+    res.status(500).json({ success: false, error: "Failed to update booking" });
+  }
+});
+
+// Event bookings endpoint
+app.post("/api/events/:eventId/bookings", async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { attendees, specialRequests, totalPrice } = req.body;
+
+    // Get user info from token if logged in
+    let userInfo = {};
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findById(decoded.userId);
+        if (user) {
+          userInfo = {
+            customerName: user.name,
+            customerEmail: user.email,
+            customerPhone: user.phone,
+            userId: user._id
+          };
+        }
+      } catch (err) {
+        // Token invalid, continue as guest
+      }
+    }
+
+    // Validate required fields
+    if (!attendees || attendees < 1) {
+      return res.status(400).json({ success: false, error: "Number of attendees is required" });
+    }
+
+    // Find the event
+    const event = await Event.findById(eventId);
+    if (!event) {
+      return res.status(404).json({ success: false, error: "Event not found" });
+    }
+
+    // Check if bookings are enabled
+    if (!event.bookingsEnabled) {
+      return res.status(400).json({ success: false, error: "Bookings are not enabled for this event" });
+    }
+
+    // Check booking deadline
+    if (event.bookingDeadline && new Date() > event.bookingDeadline) {
+      return res.status(400).json({ success: false, error: "Booking deadline has passed" });
+    }
+
+    // Check capacity
+    if (event.capacity && event.confirmedBookings >= event.capacity) {
+      return res.status(400).json({ success: false, error: "Event is fully booked" });
+    }
+
+    // Prepare booking data
+    const bookingData = {
+      customerName: userInfo.customerName || req.body.customerName,
+      customerEmail: userInfo.customerEmail || req.body.customerEmail,
+      customerPhone: userInfo.customerPhone || req.body.customerPhone,
+      status: "pending",
+      attendees: parseInt(attendees),
+      specialRequests: specialRequests || "",
+      paymentStatus: "pending",
+      amountPaid: 0
+    };
+
+    // Validate required customer info for guest bookings
+    if (!bookingData.customerName || !bookingData.customerEmail || !bookingData.customerPhone) {
+      return res.status(400).json({
+        success: false,
+        error: "Customer name, email, and phone are required"
+      });
+    }
+
+    // Add booking to event
+    await event.addBooking(bookingData);
+
+    res.status(201).json({
+      success: true,
+      message: "Booking created successfully",
+      booking: bookingData,
+      event: {
+        id: event._id,
+        title: event.title,
+        date: event.date
+      }
+    });
+  } catch (err) {
+    console.error("Error creating event booking:", err);
+    res.status(500).json({ success: false, error: "Failed to create booking" });
+  }
+});
+
+// Get event bookings (admin only)
+app.get("/api/admin/events/:eventId/bookings", authenticateAdmin, async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const event = await Event.findById(eventId);
+
+    if (!event) {
+      return res.status(404).json({ success: false, error: "Event not found" });
+    }
+
+    res.json({
+      success: true,
+      bookings: event.bookings || [],
+      event: {
+        id: event._id,
+        title: event.title,
+        date: event.date
+      }
+    });
+  } catch (err) {
+    console.error("Error fetching event bookings:", err);
+    res.status(500).json({ success: false, error: "Failed to fetch bookings" });
+  }
+});
+
+// Update event booking status (admin only)
+app.put("/api/admin/events/:eventId/bookings/:bookingId", authenticateAdmin, async (req, res) => {
+  try {
+    const { eventId, bookingId } = req.params;
+    const { status, adminNotes } = req.body;
+
+    const event = await Event.findById(eventId);
+    if (!event) {
+      return res.status(404).json({ success: false, error: "Event not found" });
+    }
+
+    const booking = event.bookings.id(bookingId);
+    if (!booking) {
+      return res.status(404).json({ success: false, error: "Booking not found" });
+    }
+
+    // Update booking status
+    booking.status = status;
+    if (adminNotes) {
+      booking.adminNotes = adminNotes;
+    }
+
+    // Update confirmed bookings count
+    if (status === "confirmed" && booking.status !== "confirmed") {
+      event.confirmedBookings += 1;
+    } else if (booking.status === "confirmed" && status !== "confirmed") {
+      event.confirmedBookings = Math.max(0, event.confirmedBookings - 1);
+    }
+
+    await event.save();
+
+    res.json({
+      success: true,
+      booking: booking,
+      message: "Booking status updated successfully"
+    });
+  } catch (err) {
+    console.error("Error updating event booking:", err);
     res.status(500).json({ success: false, error: "Failed to update booking" });
   }
 });
