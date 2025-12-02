@@ -2560,32 +2560,70 @@ app.post("/api/events/:eventId/bookings", async (req, res) => {
     }
 
     // Prepare booking data
-    const bookingData = {
-      customerName: userInfo.customerName || req.body.customerName,
-      customerEmail: userInfo.customerEmail || req.body.customerEmail,
-      customerPhone: userInfo.customerPhone || req.body.customerPhone,
-      status: "pending",
-      attendees: parseInt(attendees),
-      specialRequests: specialRequests || "",
-      paymentStatus: "pending",
-      amountPaid: 0
-    };
+    const customerName = userInfo.customerName || req.body.customerName;
+    const customerEmail = userInfo.customerEmail || req.body.customerEmail;
+    const customerPhone = userInfo.customerPhone || req.body.customerPhone;
 
     // Validate required customer info for guest bookings
-    if (!bookingData.customerName || !bookingData.customerEmail || !bookingData.customerPhone) {
+    if (!customerName || !customerEmail || !customerPhone) {
       return res.status(400).json({
         success: false,
         error: "Customer name, email, and phone are required"
       });
     }
 
+    const attendeesCount = parseInt(attendees);
+    const bookingTotalPrice = totalPrice || (event.price ? event.price * attendeesCount : 0);
+
+    // Create booking data for Event model
+    const eventBookingData = {
+      customerName: customerName,
+      customerEmail: customerEmail,
+      customerPhone: customerPhone,
+      status: "pending",
+      attendees: attendeesCount,
+      specialRequests: specialRequests || "",
+      paymentStatus: "pending",
+      amountPaid: 0
+    };
+
     // Add booking to event
-    await event.addBooking(bookingData);
+    await event.addBooking(eventBookingData);
+
+    // Also create a Booking document so it appears in bookings pages
+    const bookingDocument = new Booking({
+      type: event.type === 'catering' ? 'catering' : 'tour',
+      name: customerName,
+      phone: customerPhone,
+      email: customerEmail,
+      userId: userInfo.userId || undefined, // Will be undefined for guests
+      date: event.date,
+      eventType: event.type === 'catering' ? event.type : undefined,
+      guests: event.type === 'catering' ? attendeesCount : undefined,
+      people: event.type === 'tour' ? attendeesCount : undefined,
+      location: event.location || undefined,
+      notes: specialRequests || undefined,
+      status: "pending",
+      originalAmount: bookingTotalPrice,
+      totalAmount: bookingTotalPrice,
+      depositRequired: Math.round(bookingTotalPrice * 0.7),
+      paymentStatus: "pending"
+    });
+
+    // Save the booking document
+    const savedBooking = await bookingDocument.save();
+
+    // Link the booking document to the event booking
+    const eventBooking = event.bookings[event.bookings.length - 1];
+    if (eventBooking && savedBooking) {
+      eventBooking.bookingId = savedBooking._id;
+      await event.save();
+    }
 
     res.status(201).json({
       success: true,
       message: "Booking created successfully",
-      booking: bookingData,
+      booking: savedBooking,
       event: {
         id: event._id,
         title: event.title,
