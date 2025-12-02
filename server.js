@@ -2187,18 +2187,37 @@ app.get("/api/bookings/user", async (req, res) => {
         const user = await User.findById(decoded.userId);
 
         if (user) {
+          // Normalize email for matching (User emails are stored lowercase)
+          const userEmail = user.email ? user.email.toLowerCase().trim() : null;
+
+          // Build query conditions - match by userId, email, or phone
+          const queryConditions = [
+            { userId: decoded.userId } // Primary: Direct userId match
+          ];
+
+          // Email matching - use case-insensitive regex
+          if (userEmail) {
+            queryConditions.push({ 
+              email: { $regex: new RegExp(`^${userEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } 
+            });
+            // Also try exact match
+            queryConditions.push({ email: userEmail });
+          }
+
+          // Phone matching - try original format
+          if (user.phone) {
+            queryConditions.push({ phone: user.phone });
+          }
+
           // Get bookings by user ID and also by email/phone for guest bookings
           const userBookings = await Booking.find({
-            $or: [
-              { userId: decoded.userId },
-              { email: user.email },
-              { phone: user.phone },
-            ],
+            $or: queryConditions
           }).sort({ createdAt: -1 });
 
           bookings = userBookings;
         }
       } catch (err) {
+        console.error("Error in user bookings query:", err);
         return res.status(401).json({ success: false, error: "Invalid token" });
       }
     }
@@ -2590,13 +2609,16 @@ app.post("/api/events/:eventId/bookings", async (req, res) => {
     // Add booking to event
     await event.addBooking(eventBookingData);
 
+    // Normalize email to lowercase for consistent matching (emails are stored lowercase in User model)
+    const normalizedEmail = customerEmail ? customerEmail.toLowerCase().trim() : customerEmail;
+
     // Also create a Booking document so it appears in bookings pages
     const bookingDocument = new Booking({
       type: event.type === 'catering' ? 'catering' : 'tour',
       name: customerName,
       phone: customerPhone,
-      email: customerEmail,
-      userId: userInfo.userId || undefined, // Will be undefined for guests
+      email: normalizedEmail,
+      userId: userInfo.userId || undefined, // IMPORTANT: Set userId if user is logged in
       date: event.date,
       eventType: event.type === 'catering' ? event.type : undefined,
       guests: event.type === 'catering' ? attendeesCount : undefined,
@@ -2610,8 +2632,18 @@ app.post("/api/events/:eventId/bookings", async (req, res) => {
       paymentStatus: "pending"
     });
 
+    // Debug logging
+    console.log('Creating booking document:', {
+      userId: userInfo.userId,
+      email: normalizedEmail,
+      phone: customerPhone,
+      customerName: customerName
+    });
+
     // Save the booking document
     const savedBooking = await bookingDocument.save();
+    
+    console.log('Booking saved with ID:', savedBooking._id, 'userId:', savedBooking.userId);
 
     // Link the booking document to the event booking
     const eventBooking = event.bookings[event.bookings.length - 1];
@@ -2763,7 +2795,14 @@ app.post(
       console.log("Processed eventData:", eventData);
       const event = new Event(eventData);
       await event.save();
-      res.status(201).json({ success: true, event });
+      
+      // Ensure image URL is properly formatted in response
+      const eventResponse = event.toObject();
+      if (eventResponse.image && !eventResponse.image.startsWith('http')) {
+        eventResponse.image = eventResponse.image; // Keep as is - frontend will add base URL
+      }
+      
+      res.status(201).json({ success: true, event: eventResponse });
     } catch (err) {
       console.error("Error creating event:", err);
       res.status(500).json({ success: false, error: "Failed to create event" });
@@ -2802,7 +2841,12 @@ app.put(
         { new: true },
       );
       if (updatedEvent) {
-        res.json({ success: true, event: updatedEvent });
+        // Ensure image URL is properly formatted in response
+        const eventResponse = updatedEvent.toObject();
+        if (eventResponse.image && !eventResponse.image.startsWith('http')) {
+          eventResponse.image = eventResponse.image; // Keep as is - frontend will add base URL
+        }
+        res.json({ success: true, event: eventResponse });
       } else {
         res.status(404).json({ success: false, error: "Event not found" });
       }
