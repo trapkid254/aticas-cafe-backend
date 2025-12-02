@@ -4,10 +4,17 @@ const multer = require("multer");
 const path = require("path");
 const app = express();
 
-// Configure multer for file uploads
+// Create uploads directory if it doesn't exist (persistent, project-relative)
+const fs = require("fs");
+const uploadsDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Configure multer for file uploads (use the same directory)
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, "/tmp/uploads/");
+    cb(null, uploadsDir);
   },
   filename: function (req, file, cb) {
     cb(null, Date.now() + path.extname(file.originalname));
@@ -32,15 +39,8 @@ const upload = multer({
   },
 });
 
-// Create uploads directory if it doesn't exist
-const fs = require("fs");
-const uploadsDir = "/tmp/uploads";
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-// Serve uploaded files statically
-app.use("/uploads", express.static("/tmp/uploads"));
+// Serve uploaded files statically from the persistent uploads directory
+app.use("/uploads", express.static(uploadsDir));
 
 // CORS configuration - allow specific origins for production and development
 const allowedOrigins = [
