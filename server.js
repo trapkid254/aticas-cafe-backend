@@ -39,99 +39,7 @@ const upload = multer({
   },
 });
 
-// Serve uploaded files statically from the persistent uploads directory
-app.use("/uploads", express.static(uploadsDir));
 
-// Image verification endpoint - check if image exists
-app.get("/api/images/verify", (req, res) => {
-  try {
-    const imagePath = req.query.path;
-    if (!imagePath) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "Image path is required" 
-      });
-    }
-
-    // Normalize the path
-    let normalizedPath = imagePath.trim();
-    if (!normalizedPath.startsWith("/uploads/")) {
-      if (normalizedPath.startsWith("uploads/")) {
-        normalizedPath = "/" + normalizedPath;
-      } else {
-        normalizedPath = "/uploads/" + normalizedPath;
-      }
-    }
-
-    // Extract filename from path
-    const filename = normalizedPath.replace("/uploads/", "");
-    const fullPath = path.join(uploadsDir, filename);
-    
-    // Log for debugging
-    console.log(`[Image Verify] Checking: ${fullPath}`);
-    console.log(`[Image Verify] Uploads directory: ${uploadsDir}`);
-    console.log(`[Image Verify] Directory exists: ${fs.existsSync(uploadsDir)}`);
-
-    // Check if uploads directory exists
-    if (!fs.existsSync(uploadsDir)) {
-      return res.json({
-        success: true,
-        exists: false,
-        path: normalizedPath,
-        message: "Uploads directory does not exist",
-        uploadsDir: uploadsDir,
-        directoryExists: false
-      });
-    }
-
-    // List files in uploads directory (for debugging)
-    const filesInDir = fs.readdirSync(uploadsDir);
-    console.log(`[Image Verify] Files in uploads directory: ${filesInDir.length} files`);
-    if (filesInDir.length > 0 && filesInDir.length <= 10) {
-      console.log(`[Image Verify] Sample files: ${filesInDir.slice(0, 5).join(', ')}`);
-    }
-
-    const fileExists = fs.existsSync(fullPath);
-
-    if (fileExists) {
-      // Verify it's actually a file and get stats
-      const stats = fs.statSync(fullPath);
-      res.json({
-        success: true,
-        exists: true,
-        path: normalizedPath,
-        fullPath: fullPath,
-        size: stats.size,
-        modified: stats.mtime,
-        isFile: stats.isFile()
-      });
-    } else {
-      // Check if similar files exist (case-insensitive or different extensions)
-      const similarFiles = filesInDir.filter(f => 
-        f.toLowerCase().includes(filename.toLowerCase().split('.')[0])
-      );
-      
-      res.json({
-        success: true,
-        exists: false,
-        path: normalizedPath,
-        fullPath: fullPath,
-        message: "Image file not found",
-        uploadsDir: uploadsDir,
-        totalFilesInDir: filesInDir.length,
-        similarFiles: similarFiles.slice(0, 5) // Return up to 5 similar filenames
-      });
-    }
-  } catch (error) {
-    console.error("Error verifying image:", error);
-    res.status(500).json({
-      success: false,
-      error: "Failed to verify image",
-      message: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
-  }
-});
 
 // CORS configuration - allow specific origins for production and development
 const allowedOrigins = [
@@ -185,6 +93,100 @@ app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
 // Preflight requests are handled by the above cors() middleware
+
+// Serve uploaded files statically from the persistent uploads directory (moved after CORS middleware)
+app.use("/uploads", express.static(uploadsDir));
+
+// Image verification endpoint - check if image exists (moved after CORS middleware)
+app.get("/api/images/verify", (req, res) => {
+  try {
+    const imagePath = req.query.path;
+    if (!imagePath) {
+      return res.status(400).json({
+        success: false,
+        error: "Image path is required"
+      });
+    }
+
+    // Normalize the path
+    let normalizedPath = imagePath.trim();
+    if (!normalizedPath.startsWith("/uploads/")) {
+      if (normalizedPath.startsWith("uploads/")) {
+        normalizedPath = "/" + normalizedPath;
+      } else {
+        normalizedPath = "/uploads/" + normalizedPath;
+      }
+    }
+
+    // Extract filename from path
+    const filename = normalizedPath.replace("/uploads/", "");
+    const fullPath = path.join(uploadsDir, filename);
+
+    // Log for debugging
+    console.log(`[Image Verify] Checking: ${fullPath}`);
+    console.log(`[Image Verify] Uploads directory: ${uploadsDir}`);
+    console.log(`[Image Verify] Directory exists: ${fs.existsSync(uploadsDir)}`);
+
+    // Check if uploads directory exists
+    if (!fs.existsSync(uploadsDir)) {
+      return res.json({
+        success: true,
+        exists: false,
+        path: normalizedPath,
+        message: "Uploads directory does not exist",
+        uploadsDir: uploadsDir,
+        directoryExists: false
+      });
+    }
+
+    // List files in uploads directory (for debugging)
+    const filesInDir = fs.readdirSync(uploadsDir);
+    console.log(`[Image Verify] Files in uploads directory: ${filesInDir.length} files`);
+    if (filesInDir.length > 0 && filesInDir.length <= 10) {
+      console.log(`[Image Verify] Sample files: ${filesInDir.slice(0, 5).join(', ')}`);
+    }
+
+    const fileExists = fs.existsSync(fullPath);
+
+    if (fileExists) {
+      // Verify it's actually a file and get stats
+      const stats = fs.statSync(fullPath);
+      res.json({
+        success: true,
+        exists: true,
+        path: normalizedPath,
+        fullPath: fullPath,
+        size: stats.size,
+        modified: stats.mtime,
+        isFile: stats.isFile()
+      });
+    } else {
+      // Check if similar files exist (case-insensitive or different extensions)
+      const similarFiles = filesInDir.filter(f =>
+        f.toLowerCase().includes(filename.toLowerCase().split('.')[0])
+      );
+
+      res.json({
+        success: true,
+        exists: false,
+        path: normalizedPath,
+        fullPath: fullPath,
+        message: "Image file not found",
+        uploadsDir: uploadsDir,
+        totalFilesInDir: filesInDir.length,
+        similarFiles: similarFiles.slice(0, 5) // Return up to 5 similar filenames
+      });
+    }
+  } catch (error) {
+    console.error("Error verifying image:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to verify image",
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
 
 // Admin profile - for debugging current admin token payload (must be after CORS)
 app.get("/api/admin/profile", authenticateAdmin, (req, res) => {
