@@ -511,6 +511,16 @@ app.get("/api/users", authenticateAdmin, async (req, res) => {
 // Explicitly serve Cafeteria Admin
 app.use("/admin", express.static(path.join(__dirname, "../frontend/admin")));
 
+// Add route for admin-login.html to redirect to the proper shared admin login
+app.get("/admin-login.html", (req, res) => {
+    res.redirect("/admin/admin-login.html");
+});
+
+// Add route for admin-login.html with admin prefix
+app.get("/admin/admin-login.html", (req, res) => {
+    res.sendFile(path.join(__dirname, "../frontend/admin/admin-login.html"));
+});
+
 // Specific route for butchery admin index page
 app.get("/butchery-admin", (req, res) => {
   res.sendFile(path.join(__dirname, "../frontend/butchery-admin/index.html"));
