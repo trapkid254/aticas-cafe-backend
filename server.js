@@ -42,6 +42,59 @@ const upload = multer({
 // Serve uploaded files statically from the persistent uploads directory
 app.use("/uploads", express.static(uploadsDir));
 
+// Image verification endpoint - check if image exists
+app.get("/api/images/verify", (req, res) => {
+  try {
+    const imagePath = req.query.path;
+    if (!imagePath) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "Image path is required" 
+      });
+    }
+
+    // Normalize the path
+    let normalizedPath = imagePath.trim();
+    if (!normalizedPath.startsWith("/uploads/")) {
+      if (normalizedPath.startsWith("uploads/")) {
+        normalizedPath = "/" + normalizedPath;
+      } else {
+        normalizedPath = "/uploads/" + normalizedPath;
+      }
+    }
+
+    // Check if file exists
+    const fullPath = path.join(uploadsDir, normalizedPath.replace("/uploads/", ""));
+    const fileExists = fs.existsSync(fullPath);
+
+    if (fileExists) {
+      // Verify it's actually a file and get stats
+      const stats = fs.statSync(fullPath);
+      res.json({
+        success: true,
+        exists: true,
+        path: normalizedPath,
+        size: stats.size,
+        modified: stats.mtime
+      });
+    } else {
+      res.json({
+        success: true,
+        exists: false,
+        path: normalizedPath,
+        message: "Image file not found"
+      });
+    }
+  } catch (error) {
+    console.error("Error verifying image:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to verify image",
+      message: error.message
+    });
+  }
+});
+
 // CORS configuration - allow specific origins for production and development
 const allowedOrigins = [
   "https://cafeaticas.netlify.app",
