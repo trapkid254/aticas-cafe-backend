@@ -63,8 +63,34 @@ app.get("/api/images/verify", (req, res) => {
       }
     }
 
-    // Check if file exists
-    const fullPath = path.join(uploadsDir, normalizedPath.replace("/uploads/", ""));
+    // Extract filename from path
+    const filename = normalizedPath.replace("/uploads/", "");
+    const fullPath = path.join(uploadsDir, filename);
+    
+    // Log for debugging
+    console.log(`[Image Verify] Checking: ${fullPath}`);
+    console.log(`[Image Verify] Uploads directory: ${uploadsDir}`);
+    console.log(`[Image Verify] Directory exists: ${fs.existsSync(uploadsDir)}`);
+
+    // Check if uploads directory exists
+    if (!fs.existsSync(uploadsDir)) {
+      return res.json({
+        success: true,
+        exists: false,
+        path: normalizedPath,
+        message: "Uploads directory does not exist",
+        uploadsDir: uploadsDir,
+        directoryExists: false
+      });
+    }
+
+    // List files in uploads directory (for debugging)
+    const filesInDir = fs.readdirSync(uploadsDir);
+    console.log(`[Image Verify] Files in uploads directory: ${filesInDir.length} files`);
+    if (filesInDir.length > 0 && filesInDir.length <= 10) {
+      console.log(`[Image Verify] Sample files: ${filesInDir.slice(0, 5).join(', ')}`);
+    }
+
     const fileExists = fs.existsSync(fullPath);
 
     if (fileExists) {
@@ -74,15 +100,26 @@ app.get("/api/images/verify", (req, res) => {
         success: true,
         exists: true,
         path: normalizedPath,
+        fullPath: fullPath,
         size: stats.size,
-        modified: stats.mtime
+        modified: stats.mtime,
+        isFile: stats.isFile()
       });
     } else {
+      // Check if similar files exist (case-insensitive or different extensions)
+      const similarFiles = filesInDir.filter(f => 
+        f.toLowerCase().includes(filename.toLowerCase().split('.')[0])
+      );
+      
       res.json({
         success: true,
         exists: false,
         path: normalizedPath,
-        message: "Image file not found"
+        fullPath: fullPath,
+        message: "Image file not found",
+        uploadsDir: uploadsDir,
+        totalFilesInDir: filesInDir.length,
+        similarFiles: similarFiles.slice(0, 5) // Return up to 5 similar filenames
       });
     }
   } catch (error) {
@@ -90,7 +127,8 @@ app.get("/api/images/verify", (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to verify image",
-      message: error.message
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
